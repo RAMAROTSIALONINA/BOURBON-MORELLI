@@ -1,0 +1,19 @@
+{
+  "name": "bourbon-morelli",
+  "version": "1.0.0",
+  "description": "Site e-commerce pour BOURBON MORELLI - Couture haut de gamme",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && set PORT=5002 && node index-dev.js",
+    "client": "cd client && npm install && copy package-simple.json package.json && npm start",
+    "build": "cd client && npm run build",
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install"
+  },
+  "keywords": ["ecommerce", "fashion", "couture", "react", "nodejs"],
+  "author": "BOURBON MORELLI",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
