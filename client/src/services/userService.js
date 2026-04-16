@@ -2,6 +2,20 @@ import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5003/api';
 
+// Intercepteur pour gérer les erreurs 401
+axios.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      console.error('Token expiré ou invalide, redirection vers login');
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+      window.location.href = '/admin/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Obtenir un token admin temporaire
 const getTempAdminToken = async () => {
   try {
@@ -203,23 +217,22 @@ const userService = {
   
   // Créer un nouvel utilisateur
   createUser: async (userData) => {
-    try {
-      // Essayer d'abord avec authentification (mode production)
-      console.log('Tentative de connexion à la base de données...');
-      const config = await getAuthConfig();
-      const response = await axios.post(
-        `${API_BASE_URL}/users/admin/create`,
-        userData,
-        config
-      );
+    console.log('=== DEBUG CREATE USER ===');
+    console.log('Tentative de connexion à la base de données...');
+    console.log('Données utilisateur:', JSON.stringify(userData, null, 2));
+    
+    const config = await getAuthConfig();
+    console.log('Config obtenue:', JSON.stringify(config, null, 2));
+    
+    const response = await axios.post(
+      `${API_BASE_URL}/users/admin/create`,
+      userData,
+      config
+    );
 
-      console.log('Succès: Utilisateur créé en base de données');
-      return response.data;
-    } catch (error) {
-      console.log('Erreur avec authentification, utilisation du mode développement:', error.message);
-      // En cas d'erreur, utiliser le mode développement
-      return await createDevelopmentUser(userData);
-    }
+    console.log('Succès: Utilisateur créé en base de données');
+    console.log('Réponse API:', JSON.stringify(response.data, null, 2));
+    return response.data;
   },
 
   // Mettre à jour un utilisateur

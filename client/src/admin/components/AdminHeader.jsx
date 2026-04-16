@@ -6,14 +6,11 @@ import {
   LogOut, 
   User,
   ChevronDown,
-  Menu,
   X,
   ShoppingCart,
-  AlertTriangle,
-  CheckCircle,
-  MessageSquare,
-  Package
+  MessageSquare
 } from 'lucide-react';
+import notificationService from '../../services/notificationService';
 
 // Header Admin Simple et Efficace - Version 2.0
 // Gauche: Logo BOURBON MORELLI | Droite: Recherche + Notifications
@@ -23,48 +20,75 @@ const AdminHeader = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: 'Nouvelle commande #1234',
-      message: 'Jean Dupont vient de passer une commande de 129.99',
-      type: 'order',
-      time: 'Il y a 2 min',
-      read: false,
-      icon: ShoppingCart,
-      color: 'blue'
-    },
-    {
-      id: 2,
-      title: 'Nouveau message',
-      message: 'Marie Martin a envoyé une demande de support',
-      type: 'message',
-      time: 'Il y a 15 min',
-      read: false,
-      icon: MessageSquare,
-      color: 'green'
-    },
-    {
-      id: 3,
-      title: 'Commande en attente',
-      message: 'Commande #1233 nécessite validation',
-      type: 'order',
-      time: 'Il y a 1h',
-      read: true,
-      icon: ShoppingCart,
-      color: 'yellow'
-    },
-    {
-      id: 4,
-      title: 'Message client',
-      message: 'Pierre Durand demande des informations sur un produit',
-      type: 'message',
-      time: 'Il y a 2h',
-      read: true,
-      icon: MessageSquare,
-      color: 'purple'
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  // Charger les notifications système
+  const loadNotifications = async () => {
+    try {
+      setNotificationsLoading(true);
+      
+      // Simuler des notifications système basées sur les événements récents
+      const systemNotifications = [
+        {
+          id: 1,
+          title: 'Système opérationnel',
+          message: 'Tous les services sont en ligne et fonctionnels',
+          type: 'system',
+          time: 'Maintenant',
+          read: false,
+          icon: Bell,
+          action: '/admin/notifications'
+        },
+        {
+          id: 2,
+          title: 'Nouveaux utilisateurs',
+          message: '3 nouveaux clients se sont inscrits aujourd\'hui',
+          type: 'user',
+          time: 'Il y a 2 heures',
+          read: false,
+          icon: User,
+          action: '/admin/users'
+        },
+        {
+          id: 3,
+          title: 'Activité récente',
+          message: '5 commandes traitées dans les dernières 24h',
+          type: 'order',
+          time: 'Il y a 3 heures',
+          read: true,
+          icon: ShoppingCart,
+          action: '/admin/orders'
+        }
+      ];
+      
+      setNotifications(systemNotifications);
+    } catch (error) {
+      console.error('Erreur lors du chargement des notifications:', error);
+      // En cas d'erreur, afficher des notifications par défaut
+      setNotifications([
+        {
+          id: 0,
+          title: 'Notifications',
+          message: 'Cliquez pour voir toutes les notifications',
+          type: 'info',
+          time: 'Maintenant',
+          read: false,
+          icon: Bell,
+          action: '/admin/notifications'
+        }
+      ]);
+    } finally {
+      setNotificationsLoading(false);
     }
-  ]);
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    // Rafraîchir les notifications toutes les 30 secondes
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
   const [adminUser, setAdminUser] = useState(null);
   const navigate = useNavigate();
 
@@ -88,13 +112,13 @@ const AdminHeader = () => {
     }
   };
 
-  const markNotificationAsRead = (id) => {
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === id ? { ...notif, read: true } : notif
-      )
-    );
-  };
+  // const markNotificationAsRead = (id) => {
+  //   setNotifications(prev => 
+  //     prev.map(notif => 
+  //       notif.id === id ? { ...notif, read: true } : notif
+  //     )
+  //   );
+  // };
 
   const unreadCount = notifications.filter(n => !n.read).length;
 

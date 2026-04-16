@@ -11,52 +11,83 @@ import Collections from './pages/Collections';
 import ProductDetail from './pages/ProductDetail';
 import CartPage from './pages/CartPage';
 import Checkout from './pages/Checkout';
+import OrderConfirmation from './pages/OrderConfirmation';
+import TestPaymentGuide from './pages/TestPaymentGuide';
 import About from './pages/About';
 import Contact from './pages/Contact';
 import Account from './pages/Account';
 
-// Pages Login/Register (créées si nécessaire ou redirigées)
-// import Login from './pages/Login';
-// import Register from './pages/Register';
+// Pages Login/Register
+import Login from './pages/Login';
+import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+
+// Sous-pages du compte
+import AccountIndex from './pages/account/index';
+import Profile from './pages/account/Profile';
+import Orders from './pages/account/Orders';
+import Wishlist from './pages/account/Wishlist';
+import Addresses from './pages/account/Addresses';
+import Reviews from './pages/account/Reviews';
 
 // Pages admin
 import AdminLogin from './admin/pages/AdminLogin';
 import AdminLayout from './admin/components/AdminLayout';
+
+// Services
+import cartService from './services/cartService';
 
 // Styles
 import './index.css';
 
 function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
   const location = useLocation();
 
   useEffect(() => {
-    // Charger le compteur du panier au démarrage
-    const updateCartCount = () => {
-      const savedCart = localStorage.getItem('cart');
-      if (savedCart) {
-        const cart = JSON.parse(savedCart);
-        const count = cart.reduce((total, item) => total + item.quantity, 0);
-        // setCartCount(count);
-      }
+    // Initialiser le compteur du panier
+    setCartCount(cartService.getCartCount());
+
+    // Écouter les mises à jour du panier
+    const handleCartUpdate = () => {
+      setCartCount(cartService.getCartCount());
     };
 
-    updateCartCount();
+    // Écouter les événements custom du cartService
+    window.addEventListener('cartUpdate', handleCartUpdate);
+    
+    // S'abonner au cartService
+    const unsubscribe = cartService.subscribe(() => {
+      setCartCount(cartService.getCartCount());
+    });
 
     // Écouter les changements dans le localStorage (pour les autres onglets)
     const handleStorageChange = (e) => {
       if (e.key === 'cart') {
-        updateCartCount();
+        setCartCount(cartService.getCartCount());
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('cartUpdate', handleCartUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      unsubscribe();
+    };
   }, []);
 
   const handleCheckout = () => {
     // Rediriger vers la page de checkout
     window.location.href = '/checkout';
+  };
+
+  const handleAddToCart = (product) => {
+    // Utiliser le cartService pour ajouter au panier
+    cartService.addToCart(product);
+    setCartCount(cartService.getCartCount());
   };
 
   // Vérifier si on est sur une page admin
@@ -65,28 +96,36 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header public seulement sur les pages non-admin */}
-      {!isAdminPage && <Header />}
+      {!isAdminPage && <Header cartCount={cartCount} />}
       
-      <main className="flex-grow">
+      <main className="flex-grow pt-32 lg:pt-36">
         <Routes>
           {/* Routes publiques */}
           <Route path="/" element={<Home />} />
-          <Route path="/collections" element={<Collections />} />
-          <Route path="/collections/:category" element={<Collections />} />
-          <Route path="/product/:slug" element={<ProductDetail />} />
+          <Route path="/collections" element={<Collections onAddToCart={handleAddToCart} />} />
+          <Route path="/collections/:category" element={<Collections onAddToCart={handleAddToCart} />} />
+          <Route path="/product/:slug" element={<ProductDetail onAddToCart={handleAddToCart} />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<Checkout />} />
+          <Route path="/order-confirmation" element={<OrderConfirmation />} />
+          <Route path="/test-payments" element={<TestPaymentGuide />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
-          {/* Routes Login/Register - temporairement redirigées */}
-          <Route path="/login" element={<Navigate to="/admin/login" replace />} />
-          <Route path="/register" element={<Navigate to="/" replace />} />
+          {/* Routes Login/Register */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           
           {/* Routes protégées (compte utilisateur) */}
-          <Route path="/account" element={<Account />} />
-          <Route path="/account/orders" element={<Account />} />
-          <Route path="/account/wishlist" element={<Account />} />
-          <Route path="/account/profile" element={<Account />} />
+          <Route path="/account" element={<Account />}>
+            <Route index element={<AccountIndex />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="wishlist" element={<Wishlist />} />
+            <Route path="addresses" element={<Addresses />} />
+            <Route path="reviews" element={<Reviews />} />
+          </Route>
           
           {/* Routes admin */}
           <Route path="/admin/login" element={<AdminLogin />} />

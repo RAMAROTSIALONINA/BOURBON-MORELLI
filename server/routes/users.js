@@ -519,8 +519,12 @@ router.post('/admin/create', authenticateToken, requireAdmin, [
   body('last_name').notEmpty().withMessage('Le nom est requis'),
   body('email').isEmail().withMessage('L\'email doit être valide'),
   body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères'),
-  body('role').isIn(['client', 'admin']).withMessage('Le rôle doit être client ou admin'),
-  body('status').isIn(['active', 'inactive']).withMessage('Le statut doit être actif ou inactif')
+  body('role').isIn(['customer', 'admin']).withMessage('Le rôle doit être customer ou admin'),
+  body('status').custom((value, { req }) => {
+  // Accepter les chaînes et les nombres
+  const validValues = ['active', 'inactive', 0, 1];
+  return validValues.includes(value);
+}).withMessage('Le statut doit être actif, inactif, 0 ou 1'),
 ], handleValidationErrors, async (req, res) => {
   try {
     const { first_name, last_name, email, phone, password, role, status, address, city, postal_code, country } = req.body;
@@ -538,20 +542,23 @@ router.post('/admin/create', authenticateToken, requireAdmin, [
     const bcrypt = require('bcryptjs');
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Convertir le statut pour la base de données
+    const dbStatus = (status === 'active' || status === 1) ? 1 : 0;
+
     // Créer l'utilisateur
     const result = await query(`
-      INSERT INTO users (first_name, last_name, email, phone, password, role, status) 
+      INSERT INTO users (first_name, last_name, email, phone, password_hash, role, status) 
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [first_name, last_name, email, phone, hashedPassword, role, status]);
+    `, [first_name, last_name, email, phone, hashedPassword, role, dbStatus]);
 
     const userId = result.insertId;
 
     // Ajouter l'adresse si fournie
     if (address || city || postal_code || country) {
       await query(`
-        INSERT INTO addresses (user_id, address, city, postal_code, country, is_default) 
-        VALUES (?, ?, ?, ?, ?, 1)
-      `, [userId, address || '', city || '', postal_code || '', country || '']);
+        INSERT INTO addresses (user_id, street_address, city, postal_code, country, is_default, first_name, last_name) 
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+      `, [userId, address || '', city || '', postal_code || '', country || '', first_name, last_name]);
     }
 
     // Récupérer l'utilisateur créé
@@ -566,10 +573,16 @@ router.post('/admin/create', authenticateToken, requireAdmin, [
     });
 
   } catch (error) {
-    console.error('Erreur lors de la création de l\'utilisateur:', error);
+    console.error('=== ERREUR CRÉATION UTILISATEUR ===');
+    console.error('Erreur:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('Données reçues:', req.body);
+    console.error('Type d\'erreur:', error.name);
+    
     res.status(500).json({
       error: 'Erreur serveur',
-      message: 'Impossible de créer l\'utilisateur'
+      message: 'Impossible de créer l\'utilisateur',
+      details: error.message
     });
   }
 });
@@ -579,7 +592,7 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
   body('first_name').optional().notEmpty().withMessage('Le prénom ne peut pas être vide'),
   body('last_name').optional().notEmpty().withMessage('Le nom ne peut pas être vide'),
   body('email').optional().isEmail().withMessage('L\'email doit être valide'),
-  body('role').optional().isIn(['client', 'admin']).withMessage('Le rôle doit être client ou admin'),
+  body('role').optional().isIn(['customer', 'admin']).withMessage('Le rôle doit être customer ou admin'),
   body('status').optional().isIn(['active', 'inactive']).withMessage('Le statut doit être actif ou inactif')
 ], handleValidationErrors, async (req, res) => {
   try {
@@ -636,8 +649,9 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
     }
 
     if (status !== undefined) {
+      const dbStatus = status === 'active' ? 1 : 0;
       updates.push('status = ?');
-      params.push(status);
+      params.push(dbStatus);
     }
 
     if (password && password.trim() !== '') {
@@ -663,7 +677,7 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
         // Mettre à jour l'adresse existante
         await query(`
           UPDATE addresses SET 
-            address = COALESCE(?, address), 
+            street_address = COALESCE(?, street_address), 
             city = COALESCE(?, city), 
             postal_code = COALESCE(?, postal_code), 
             country = COALESCE(?, country)
@@ -672,9 +686,9 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
       } else {
         // Créer une nouvelle adresse
         await query(`
-          INSERT INTO addresses (user_id, address, city, postal_code, country, is_default) 
-          VALUES (?, ?, ?, ?, ?, 1)
-        `, [userId, address || '', city || '', postal_code || '', country || '']);
+          INSERT INTO addresses (user_id, street_address, city, postal_code, country, is_default, first_name, last_name) 
+          VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        `, [userId, address || '', city || '', postal_code || '', country || '', first_name, last_name]);
       }
     }
 

@@ -1,48 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Users, 
   ShoppingBag, 
-  TrendingUp, 
   Package, 
-  CreditCard, 
   Eye,
   Edit,
   Trash2,
   Plus,
-  Calendar,
-  DollarSign,
-  ShoppingCart,
-  User
+  DollarSign
 } from 'lucide-react';
+import ProductManagement from './ProductManagement';
+import OrderManagement from './OrderManagement';
+import CustomerManagement from './CustomerManagement';
+import PaymentManagement from './PaymentManagement';
+import NotificationManagement from './NotificationManagement';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [adminUser, setAdminUser] = useState(null);
+  // const [adminUser, setAdminUser] = useState(null);
 
   useEffect(() => {
     // Vérifier l'authentification
     let token = localStorage.getItem('adminToken');
-    let user = localStorage.getItem('adminUser');
+    // let user = localStorage.getItem('adminUser');
     
-    // Token temporaire pour développement
-    if (!token) {
-      token = 'temp-admin-token-123';
-      user = JSON.stringify({
-        name: 'Admin Temporaire',
-        email: 'admin@bourbonmorelli.com',
-        role: 'admin'
-      });
-      localStorage.setItem('adminToken', token);
-      localStorage.setItem('adminUser', user);
-    }
-    
+    // Rediriger vers login si non authentifié
     if (!token) {
       navigate('/admin/login');
-    } else {
-      setAdminUser(JSON.parse(user));
+      return;
     }
+    
+    // if (user) {
+    //   setAdminUser(JSON.parse(user));
+    // }
   }, [navigate]);
 
   // Données mockées pour le dashboard
@@ -75,15 +67,24 @@ const AdminDashboard = () => {
   // Déterminer la section active basée sur l'URL
   const getActiveSection = () => {
     const path = location.pathname;
-    if (path.includes('/products')) return 'products';
-    if (path.includes('/orders')) return 'orders';
-    if (path.includes('/customers')) return 'customers';
-    if (path.includes('/payments')) return 'payments';
-    if (path.includes('/settings')) return 'settings';
-    return 'overview';
+    console.log('=== ACTIVE SECTION CHECK ===');
+    console.log('Current path:', path);
+    
+    let section = 'overview';
+    if (path.includes('/products')) section = 'products';
+    else if (path.includes('/orders')) section = 'orders';
+    else if (path.includes('/customers')) section = 'customers';
+    else if (path.includes('/payments')) section = 'payments';
+    else if (path.includes('/notifications')) section = 'notifications';
+    else if (path.includes('/settings')) section = 'settings';
+    
+    console.log('Determined section:', section);
+    return section;
   };
 
   const activeSection = getActiveSection();
+  console.log('=== RENDERING ADMIN DASHBOARD ===');
+  console.log('Active section:', activeSection);
 
   const renderContent = () => {
     switch (activeSection) {
@@ -262,68 +263,20 @@ const AdminDashboard = () => {
         );
 
       case 'orders':
-        return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-neutral-900">Gestion des commandes</h2>
-              <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
-                <Plus className="w-4 h-4 mr-2" />
-                Nouvelle commande
-              </button>
-            </div>
-            
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-              <p className="text-neutral-600">Liste des commandes...</p>
-            </div>
-          </div>
-        );
+        return <OrderManagement />;
 
       case 'products':
-        return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-neutral-900">Gestion des produits</h2>
-              <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
-                <Plus className="w-4 h-4 mr-2" />
-                Nouveau produit
-              </button>
-            </div>
-            
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-              <p className="text-neutral-600">Liste des produits...</p>
-            </div>
-          </div>
-        );
+        console.log('=== RENDERING PRODUCT MANAGEMENT ===');
+        return <ProductManagement />;
 
       case 'customers':
-        return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-neutral-900">Gestion des clients</h2>
-              <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">
-                <Plus className="w-4 h-4 mr-2" />
-                Nouveau client
-              </button>
-            </div>
-            
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-              <p className="text-neutral-600">Liste des clients...</p>
-            </div>
-          </div>
-        );
+        return <CustomerManagement />;
 
       case 'payments':
-        return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-neutral-900">Gestion des paiements</h2>
-            </div>
-            
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-              <p className="text-neutral-600">Liste des paiements...</p>
-            </div>
-          </div>
-        );
+        return <PaymentManagement />;
+
+      case 'notifications':
+        return <NotificationManagement />;
 
       case 'settings':
         return (

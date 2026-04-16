@@ -2,10 +2,12 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
+import AdminLogin from './pages/AdminLogin';
 
 const AdminRoutes = () => {
   return (
     <Routes>
+      <Route path="/login" element={<AdminLogin />} />
       <Route path="/dashboard" element={<AdminDashboard />} />
       <Route path="/products" element={<AdminDashboard />} />
       <Route path="/products/new" element={<AdminDashboard />} />

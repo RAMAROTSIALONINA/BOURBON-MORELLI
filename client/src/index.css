@@ -26,11 +26,124 @@ body {
   line-height: 1.6;
 }
 
+/* Couleurs Tailwind personnalisées */
+@layer base {
+  .text-primary-500 {
+    color: var(--color-primary);
+  }
+  .bg-primary-500 {
+    background-color: var(--color-primary);
+  }
+  .text-primary-600 {
+    color: #ca8a04;
+  }
+  .bg-primary-600 {
+    background-color: #ca8a04;
+  }
+  .text-primary-50 {
+    color: #fefce8;
+  }
+  .bg-primary-50 {
+    background-color: #fefce8;
+  }
+  .ring-primary-500 {
+    --tw-ring-color: var(--color-primary);
+  }
+  .border-primary-500 {
+    border-color: var(--color-primary);
+  }
+  
+  .text-neutral-900 {
+    color: var(--color-neutral-900);
+  }
+  .text-neutral-700 {
+    color: #374151;
+  }
+  .text-neutral-600 {
+    color: #6b7280;
+  }
+  .text-neutral-500 {
+    color: #9ca3af;
+  }
+  .text-neutral-100 {
+    color: var(--color-neutral-100);
+  }
+  .bg-neutral-50 {
+    background-color: #f9fafb;
+  }
+  .bg-neutral-100 {
+    background-color: var(--color-neutral-100);
+  }
+  .border-neutral-200 {
+    border-color: #e5e7eb;
+  }
+  .border-neutral-100 {
+    border-color: #f3f4f6;
+  }
+  
+  .font-luxury {
+    font-family: 'Playfair Display', serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* Amélioration du titre du header */
+  .header-title {
+    line-height: 1.0;
+    word-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: lining-nums;
+  }
+
+  .header-subtitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-variant-numeric: lining-nums;
+    opacity: 0.9;
+  }
+
+  /* Animation slide-up pour le menu mobile */
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+}
+
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Playfair Display', serif;
   font-weight: 600;
   color: var(--color-neutral-900);
+}
+
+/* Animation slide-up */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
 }
 
 /* Scrollbar personnalisée */

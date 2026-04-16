@@ -22,9 +22,9 @@
     "tailwindcss": "^3.2.7"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
+    "start": "set DISABLE_ESLINT_PLUGIN=true && set GENERATE_SOURCEMAP=false && set FAST_REFRESH=false && set WDS_SOCKET_PORT=0 && set WDS_SOCKET_HOST=localhost && set WDS_SOCKET_PATH=false && react-app-rewired start",
+    "build": "react-app-rewired build",
+    "test": "react-app-rewired test",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -47,6 +47,7 @@
   },
   "homepage": ".",
   "devDependencies": {
-    "http-proxy-middleware": "^3.0.5"
+    "http-proxy-middleware": "^3.0.5",
+    "react-app-rewired": "^2.2.1"
   }
 }

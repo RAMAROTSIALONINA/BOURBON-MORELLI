@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Heart, Star, Eye } from 'lucide-react';
 import ImagePlaceholder from './ImagePlaceholder';
 import { Link } from 'react-router-dom';
+import productDataService from '../services/productDataService';
 
-const ProductCard = ({ product, onAddToCart }) => {
+const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
   const [imageError, setImageError] = useState(false);
   const [currentImage, setCurrentImage] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const [isInWishlist, setIsInWishlist] = useState(false);
+
+  // Vérifier si le produit est déjà dans les favoris au chargement
+  useEffect(() => {
+    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+    setIsInWishlist(wishlist.some(item => item.id === product.id));
+  }, [product.id]);
 
   const handleImageError = () => {
     if (!imageError) {
@@ -15,13 +22,13 @@ const ProductCard = ({ product, onAddToCart }) => {
     }
   };
 
-  const getImageSrc = () => {
-    if (imageError) {
-      // Utiliser une vraie image comme fallback
-      return '/images/BOURBON MORELLI.png';
-    }
-    return product.images?.[currentImage] || '/images/BOURBON MORELLI.png';
-  };
+  // const getImageSrc = () => {
+  //   if (imageError) {
+  //     // Utiliser une vraie image comme fallback
+  //     return '/images/BOURBON MORELLI.png';
+  //   }
+  //   return product.images?.[currentImage] || '/images/BOURBON MORELLI.png';
+  // };
 
   const handleAddToCart = (e) => {
     e.preventDefault();
@@ -32,7 +39,29 @@ const ProductCard = ({ product, onAddToCart }) => {
   const handleAddToWishlist = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsInWishlist(!isInWishlist);
+    
+    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+    const newIsInWishlist = !isInWishlist;
+    
+    if (newIsInWishlist) {
+      // Ajouter aux favoris en utilisant le service centralisé
+      const wishlistItem = productDataService.formatForWishlist(product);
+      
+      wishlist.push(wishlistItem);
+      console.log(`"${product.name}" ajouté aux favoris`);
+    } else {
+      // Retirer des favoris
+      const updatedWishlist = wishlist.filter(item => item.id !== product.id);
+      localStorage.setItem('wishlist', JSON.stringify(updatedWishlist));
+      console.log(`"${product.name}" retiré des favoris`);
+      return; // Sortir car on a déjà mis à jour le localStorage
+    }
+    
+    localStorage.setItem('wishlist', JSON.stringify(wishlist));
+    setIsInWishlist(newIsInWishlist);
+    
+    // Notifier le composant parent
+    onAddToWishlist?.(product, newIsInWishlist);
   };
 
   const formatPrice = (price) => {

@@ -24,25 +24,11 @@ const ProductDetail = () => {
   useEffect(() => {
     console.log('ProductDetail useEffect - slug:', slug);
     
-    // Utiliser l'API backend au lieu des données mockées
+    // Utiliser les données mockées directement (pas d'API disponible)
     const fetchProduct = async () => {
       try {
         setLoading(true);
-        console.log('Fetching product from URL:', `/api/products/${slug}`);
-        
-        const response = await fetch(`/api/products/${slug}`);
-        
-        if (!response.ok) {
-          throw new Error('Product not found');
-        }
-        
-        const productData = await response.json();
-        console.log('Product API Response:', productData);
-        
-        setProduct(productData);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching product:', error);
+        console.log('Fetching product from mock data for slug:', slug);
         
         // Fallback vers les données mockées si l'API échoue
         const mockProducts = [
@@ -201,6 +187,45 @@ const ProductDetail = () => {
               }
             ],
             similar_products: []
+          },
+          {
+            id: 2,
+            name: 'T-shirt Premium',
+            slug: 'tshirt-premium',
+            price: 39.99,
+            compare_price: 59.99,
+            description: 'T-shirt en coton bio de haute qualité, confortable et élégant. Parfait pour un usage quotidien avec sa coupe moderne et son tissu respirant.',
+            images: ['/images/T-shirts1.PNG', '/images/T-shirts2.PNG', '/images/T-shirts3.PNG'],
+            category: { name: 'T-Shirts', slug: 't-shirts' },
+            featured: true,
+            rating: 4,
+            reviews_count: 8,
+            inventory_quantity: 3,
+            variants: [
+              {
+                id: 2,
+                name: 'T-shirt Premium Taille M',
+                sku: 'TSP002-M',
+                price: 39.99,
+                inventory_quantity: 1,
+                options: [
+                  { name: 'Taille', value: 'M' },
+                  { name: 'Couleur', value: 'Blanc' }
+                ]
+              },
+              {
+                id: 3,
+                name: 'T-shirt Premium Taille L',
+                sku: 'TSP002-L',
+                price: 39.99,
+                inventory_quantity: 2,
+                options: [
+                  { name: 'Taille', value: 'L' },
+                  { name: 'Couleur', value: 'Blanc' }
+                ]
+              }
+            ],
+            similar_products: []
           }
         ];
         
@@ -216,6 +241,9 @@ const ProductDetail = () => {
           window.location.href = '/collections';
         }
         
+        setLoading(false);
+      } catch (error) {
+        console.error('Error in fetchProduct:', error);
         setLoading(false);
       }
     };

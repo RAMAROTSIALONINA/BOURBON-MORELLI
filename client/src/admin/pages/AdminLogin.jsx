@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, Mail, Shield, AlertCircle } from 'lucide-react';
+import axios from 'axios';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -25,23 +26,27 @@ const AdminLogin = () => {
     setIsLoading(true);
     setError('');
 
-    // Simulation d'authentification admin
-    setTimeout(() => {
-      // Vérifications basiques pour la démo
-      if (formData.email === 'admin@bourbonmorelli.com' && formData.password === 'admin123') {
-        // Stocker le token admin
-        localStorage.setItem('adminToken', 'admin-bourbon-morelli-token');
-        localStorage.setItem('adminUser', JSON.stringify({
-          name: 'Administrateur',
-          email: formData.email,
-          role: 'admin'
-        }));
-        navigate('/admin/dashboard');
-      } else {
-        setError('Email ou mot de passe incorrect');
-      }
+    try {
+      // Appel API réel pour l'authentification
+      const response = await axios.post('http://localhost:5003/api/auth/login', {
+        email: formData.email,
+        password: formData.password
+      });
+
+      // Stocker le token JWT réel
+      localStorage.setItem('adminToken', response.data.token);
+      localStorage.setItem('adminUser', JSON.stringify({
+        name: response.data.user.first_name + ' ' + response.data.user.last_name,
+        email: response.data.user.email,
+        role: response.data.user.role
+      }));
+      
+      navigate('/admin/dashboard');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Email ou mot de passe incorrect');
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
