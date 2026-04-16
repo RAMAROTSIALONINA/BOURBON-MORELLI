@@ -30,7 +30,9 @@ const ProductGrid = ({ products, loading, onAddToCart, onAddToWishlist }) => {
 
   // Apply filters and sorting
   useEffect(() => {
-    let filtered = [...products];
+    // S'assurer que products est un tableau
+    const productsArray = Array.isArray(products) ? products : [];
+    let filtered = [...productsArray];
 
     // Apply category filter
     if (filters.categories.length > 0) {

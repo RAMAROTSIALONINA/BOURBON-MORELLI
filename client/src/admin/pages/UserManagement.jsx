@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
-  Plus, 
   Edit, 
   Trash2, 
   Search, 
-  Filter,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -14,14 +12,9 @@ import {
   Check,
   X,
   UserPlus,
-  Shield,
-  Mail,
-  Phone,
-  Calendar,
-  MapPin,
-  Briefcase
+  Shield
 } from 'lucide-react';
-import userService, { getAuthConfig } from '../../services/userService';
+import userService from '../../services/userService';
 
 const UserManagement = () => {
   const navigate = useNavigate();
@@ -35,6 +28,15 @@ const UserManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+
+  // Vérifier l'authentification au chargement
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin/login');
+      return;
+    }
+  }, [navigate]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -47,7 +49,7 @@ const UserManagement = () => {
     lastName: '',
     email: '',
     phone: '',
-    role: 'client',
+    role: 'customer',
     status: 'active',
     address: '',
     city: '',
@@ -58,60 +60,96 @@ const UserManagement = () => {
   });
 
   // Charger les données depuis l'API
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Essayer d'abord avec la vraie API (mode production)
+      // Vérifier d'abord l'authentification
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        console.error('Token d\'administration manquant');
+        setError('Session expirée. Veuillez vous reconnecter.');
+        navigate('/admin/login');
+        return;
+      }
+
       console.log('Tentative de connexion à la base de données...');
       try {
         const response = await userService.getUsers();
+        console.log('=== RÉPONSE USERS API ===');
+        console.log('Response brute:', response);
+        console.log('Response type:', typeof response);
+        console.log('Is response array:', Array.isArray(response));
         
-        // Transformer les données pour correspondre au format attendu
-        const transformedUsers = response.users.map(user => ({
+        // La réponse contient directement le tableau d'utilisateurs
+        const usersArray = Array.isArray(response) ? response : (response.users || []);
+        const transformedUsers = usersArray.filter(user => user != null).map(user => ({
           id: user.id,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          email: user.email,
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
+          email: user.email || '',
           phone: user.phone || '',
-          role: user.role,
-          status: user.status,
+          role: user.role || 'customer',
+          status: user.status === 1 ? 'active' : 'inactive', // Convertir 0/1 en texte
           address: '', // Sera chargé séparément si nécessaire
           city: '',
           postalCode: '',
           country: '',
-          joinDate: user.created_at,
+          joinDate: user.created_at || new Date().toISOString(),
           lastLogin: null, // Sera ajouté si nécessaire
           totalOrders: user.order_count || 0,
           totalSpent: user.total_spent || 0
         }));
 
+        console.log('=== DONNÉES TRANSFORMÉES ===');
+        console.log('Users transformés:', transformedUsers);
+        console.log('Nombre d\'utilisateurs:', transformedUsers.length);
+
         setUsers(transformedUsers);
-        setTotalPages(response.pagination.total_pages);
-        setTotalUsers(response.pagination.total);
+        // Pas de pagination dans la réponse actuelle
+        setTotalPages(1);
+        setTotalUsers(transformedUsers.length);
         
         console.log('Succès: Données chargées depuis la base de données MySQL');
       } catch (error) {
         console.log('Erreur avec l\'API, utilisation du mode développement:', error.message);
         
+        // Afficher l'erreur détaillée
+        if (error.response) {
+          if (error.response.status === 401) {
+            setError('Session expirée. Veuillez vous reconnecter.');
+            localStorage.removeItem('adminToken');
+            navigate('/admin/login');
+            return;
+          } else if (error.response.status === 403) {
+            setError('Accès non autorisé. Droits administrateur requis.');
+          } else {
+            setError(`Erreur serveur (${error.response.status}): ${error.response.data?.message || error.message}`);
+          }
+        } else if (error.request) {
+          setError('Impossible de contacter le serveur. Vérifiez que le backend est démarré sur le port 5003.');
+        } else {
+          setError(error.message || 'Impossible de charger les utilisateurs');
+        }
+        
         // En cas d'erreur, utiliser le mode développement
         console.log('Fallback vers le mode développement...');
         const response = await userService.getDevelopmentUsers();
         
-        const transformedUsers = response.users.map(user => ({
+        const transformedUsers = response.users.filter(user => user != null).map(user => ({
           id: user.id,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          email: user.email,
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
+          email: user.email || '',
           phone: user.phone || '',
-          role: user.role,
-          status: user.status,
+          role: user.role || 'customer',
+          status: user.status || 'inactive',
           address: '', 
           city: '',
           postalCode: '',
           country: '',
-          joinDate: user.created_at,
+          joinDate: user.created_at || new Date().toISOString(),
           lastLogin: null,
           totalOrders: user.order_count || 0,
           totalSpent: user.total_spent || 0
@@ -129,15 +167,25 @@ const UserManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
   // Charger les statistiques
   const loadStats = async () => {
     try {
-      // Mode développement - utiliser le contournement sans authentification
-      console.log('Mode développement: Utilisation des statistiques de contournement');
-      const response = await userService.getDevelopmentStats();
-      setStats(response.stats);
+      // Essayer d'abord avec la vraie API (mode production)
+      console.log('Tentative de connexion à la base de données pour les statistiques...');
+      try {
+        const response = await userService.getStats();
+        setStats(response.stats);
+        console.log('Succès: Statistiques chargées depuis la base de données MySQL');
+      } catch (error) {
+        console.log('Erreur avec l\'API, utilisation du mode développement pour les statistiques:', error.message);
+        // En cas d'erreur, utiliser le mode développement
+        console.log('Fallback vers le mode développement pour les statistiques...');
+        const response = await userService.getDevelopmentStats();
+        setStats(response.stats);
+        console.log('Mode développement: Statistiques mockées chargées');
+      }
     } catch (error) {
       console.error('Erreur lors du chargement des statistiques:', error);
     }
@@ -146,7 +194,7 @@ const UserManagement = () => {
   useEffect(() => {
     loadUsers();
     loadStats();
-  }, []); // Mode développement - pas de dépendances pour éviter les rechargements infinis
+  }, [loadUsers]); // Mode développement - dépendance ajoutée pour ESLint
 
   // Les utilisateurs sont déjà filtrés et paginés par l'API
   const paginatedUsers = users;
@@ -162,6 +210,9 @@ const UserManagement = () => {
 
   // Ajouter un utilisateur
   const handleAddUser = async () => {
+    console.log('=== AJOUT UTILISATEUR DÉMARRÉ ===');
+    console.log('Formulaire:', JSON.stringify(formData, null, 2));
+    
     try {
       // Validation
       if (!formData.firstName || !formData.lastName || !formData.email) {
@@ -179,58 +230,67 @@ const UserManagement = () => {
         first_name: formData.firstName,
         last_name: formData.lastName,
         email: formData.email,
-        phone: formData.phone,
         password: formData.password,
         role: formData.role,
-        status: formData.status,
-        address: formData.address,
-        city: formData.city,
-        postal_code: formData.postalCode,
-        country: formData.country
-      };
-
-      // Mode développement - utilisation directe des fonctions de simulation
-      console.log('Mode développement: Simulation d\'ajout d\'utilisateur (pas de base de données)');
-      const result = await userService.createDevelopmentUser(userData);
-      
-      // Mettre à jour l'état local pour voir les changements dans l'interface
-      const newUser = {
-        id: result.id,
-        firstName: result.first_name,
-        lastName: result.last_name,
-        email: result.email,
-        phone: result.phone,
-        role: result.role,
-        status: result.status,
-        address: formData.address,
-        city: formData.city,
-        postalCode: formData.postalCode,
-        country: formData.country,
-        joinDate: result.created_at,
-        lastLogin: null,
-        totalOrders: 0,
-        totalSpent: 0
+        status: formData.status
       };
       
-      // Ajouter l'utilisateur à l'état local pour voir le changement immédiatement
-      setUsers(prev => [...prev, newUser]);
+      // N'ajouter les champs optionnels que s'ils ne sont pas vides
+      if (formData.phone && formData.phone.trim() !== '') {
+        userData.phone = formData.phone;
+      }
+      if (formData.address && formData.address.trim() !== '') {
+        userData.address = formData.address;
+      }
+      if (formData.city && formData.city.trim() !== '') {
+        userData.city = formData.city;
+      }
+      if (formData.postalCode && formData.postalCode.trim() !== '') {
+        userData.postal_code = formData.postalCode;
+      }
+      if (formData.country && formData.country.trim() !== '') {
+        userData.country = formData.country;
+      }
       
-      // Mettre à jour les statistiques
-      setStats(prev => ({
-        ...prev,
-        total: prev.total + 1,
-        active: result.status === 'active' ? prev.active + 1 : prev.active,
-        admin: result.role === 'admin' ? prev.admin + 1 : prev.admin,
-        inactive: result.status === 'inactive' ? prev.inactive + 1 : prev.inactive
-      }));
+      // Validation du mot de passe
+      if (showAddModal && (!formData.password || formData.password.length < 6)) {
+        alert('Le mot de passe doit contenir au moins 6 caractères');
+        return;
+      }
+      
+      console.log('=== DONNÉES FORMULAIRE ===');
+      console.log('formData:', JSON.stringify(formData, null, 2));
+      console.log('userData:', JSON.stringify(userData, null, 2));
+      console.log('Données API:', JSON.stringify(userData, null, 2));
+      
+      // Validation supplémentaire
+      console.log('=== VALIDATION DONNÉES ===');
+      console.log('first_name:', userData.first_name, 'type:', typeof userData.first_name);
+      console.log('last_name:', userData.last_name, 'type:', typeof userData.last_name);
+      console.log('email:', userData.email, 'type:', typeof userData.email);
+      console.log('password:', userData.password ? '***' : 'null', 'length:', userData.password?.length);
+      console.log('role:', userData.role, 'type:', typeof userData.role);
+      console.log('status:', userData.status, 'type:', typeof userData.status);
+      
+      // Utiliser la vraie API (mode production)
+      console.log('=== APPEL API CREATE USER ===');
+      console.log('Tentative d\'ajout d\'utilisateur dans la base de données...');
+      console.log('Données API:', JSON.stringify(userData, null, 2));
+      
+      const response = await userService.createUser(userData);
+      console.log('=== RÉPONSE API REÇUE ===');
+      console.log('Réponse:', JSON.stringify(response, null, 2));
+      
+      // Recharger la liste pour voir le nouvel utilisateur
+      await loadUsers();
+      await loadStats();
       
       setShowAddModal(false);
       resetForm();
       
-      alert(`Utilisateur ajouté avec succès (mode développement):\n\nID: ${result.id}\nNom: ${result.first_name} ${result.last_name}\nEmail: ${result.email}\n\nNote: Les changements ne sont pas sauvegardés en base de données.`);
+      alert(`Utilisateur ajouté avec succès!\n\nID: ${response.user?.id || 'N/A'}\nNom: ${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName}\nEmail: ${response.user?.email || formData.email}\n\nNote: Utilisateur ajouté dans la base de données MySQL!`);
     } catch (error) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
-      alert(error.message || 'Impossible de créer l\'utilisateur');
     }
   };
 
@@ -244,6 +304,12 @@ const UserManagement = () => {
 
       if (formData.password && formData.password !== formData.confirmPassword) {
         alert('Les mots de passe ne correspondent pas');
+        return;
+      }
+
+      // Vérifier si l'utilisateur ID est valide (pas un ID de développement)
+      if (selectedUser.id > 1000) {
+        alert('Cet utilisateur a été créé en mode développement et ne peut pas être modifié dans la base de données.');
         return;
       }
 
@@ -269,44 +335,49 @@ const UserManagement = () => {
       // Essayer d'abord avec authentification (mode production)
       console.log('Tentative de connexion à la base de données...');
       try {
-        const config = await getAuthConfig();
+        // const config = await getAuthConfig();
         const response = await userService.updateUser(selectedUser.id, userData);
         
         // Mettre à jour l'état local pour voir les changements immédiatement
-        setUsers(prev => prev.map(user => 
-          user.id === selectedUser.id 
-            ? {
-                ...user,
-                firstName: response.user.first_name,
-                lastName: response.user.last_name,
-                email: response.user.email,
-                phone: response.user.phone,
-                role: response.user.role,
-                status: response.user.status,
-                address: formData.address,
-                city: formData.city,
-                postal_code: formData.postalCode,
-                country: formData.country,
-                updated_at: response.user.updated_at
-              }
-            : user
-        ));
+        if (response.user) {
+          setUsers(prev => prev.map(user => 
+            user.id === selectedUser.id 
+              ? {
+                  ...user,
+                  firstName: response.user.first_name || user.firstName,
+                  lastName: response.user.last_name || user.lastName,
+                  email: response.user.email || user.email,
+                  phone: response.user.phone || user.phone,
+                  role: response.user.role || user.role,
+                  status: response.user.status !== undefined ? (response.user.status === 1 ? 'active' : 'inactive') : user.status,
+                  address: formData.address || user.address,
+                  city: formData.city || user.city,
+                  postalCode: formData.postalCode || user.postalCode,
+                  country: formData.country || user.country,
+                  updated_at: response.user.updated_at || user.updated_at
+                }
+              : user
+          ));
+        }
         
         // Mettre à jour les statistiques si le rôle ou statut a changé
         const oldUser = users.find(u => u.id === selectedUser.id);
-        if (oldUser) {
+        if (oldUser && response.user) {
+          const newStatus = response.user.status === 1 ? 'active' : 'inactive';
+          const newRole = response.user.role;
+          
           setStats(prev => ({
             ...prev,
-            active: prev.active - (oldUser.status === 'active' ? 1 : 0) + (response.user.status === 'active' ? 1 : 0),
-            admin: prev.admin - (oldUser.role === 'admin' ? 1 : 0) + (response.user.role === 'admin' ? 1 : 0),
-            inactive: prev.inactive - (oldUser.status === 'inactive' ? 1 : 0) + (response.user.status === 'inactive' ? 1 : 0)
+            active: prev.active - (oldUser.status === 'active' ? 1 : 0) + (newStatus === 'active' ? 1 : 0),
+            admin: prev.admin - (oldUser.role === 'admin' ? 1 : 0) + (newRole === 'admin' ? 1 : 0),
+            inactive: prev.inactive - (oldUser.status === 'inactive' ? 1 : 0) + (newStatus === 'inactive' ? 1 : 0)
           }));
         }
         
         setShowEditModal(false);
         resetForm();
         
-        alert(`Utilisateur modifié avec succès!\n\nID: ${response.user.id}\nNom: ${response.user.first_name} ${response.user.last_name}\nEmail: ${response.user.email}\n\nNote: Changements sauvegardés en base de données!`);
+        alert(`Utilisateur modifié avec succès!\n\nID: ${response.user?.id || selectedUser.id}\nNom: ${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName}\nEmail: ${response.user?.email || formData.email}\n\nNote: Changements sauvegardés en base de données!`);
       } catch (error) {
         console.log('Erreur avec authentification, utilisation du mode développement:', error.message);
         
@@ -362,7 +433,7 @@ const UserManagement = () => {
       // Essayer d'abord avec authentification (mode production)
       console.log('Tentative de connexion à la base de données...');
       try {
-        const config = await getAuthConfig();
+        // const config = await getAuthConfig();
         const response = await userService.deleteUser(selectedUser.id);
         
         // Supprimer l'utilisateur de l'état local pour voir le changement immédiatement
@@ -424,7 +495,7 @@ const UserManagement = () => {
       lastName: '',
       email: '',
       phone: '',
-      role: 'client',
+      role: 'customer',
       status: 'active',
       address: '',
       city: '',
@@ -515,7 +586,7 @@ const UserManagement = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Gestion des Utilisateurs</h1>
-            <p className="text-gray-600 mt-1">Gérez les comptes utilisateurs et leurs permissions</p>
+            <p className="text-gray-600 mt-1">Gérez les comptes utilisateurs et leurs 0permissions</p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -610,7 +681,7 @@ const UserManagement = () => {
           >
             <option value="all">Tous les rôles</option>
             <option value="admin">Administrateurs</option>
-            <option value="client">Clients</option>
+            <option value="customer">Clients</option>
           </select>
           <select
             value={filterStatus}
@@ -825,7 +896,7 @@ const UserManagement = () => {
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
                   >
-                    <option value="client">Client</option>
+                    <option value="customer">Client</option>
                     <option value="admin">Administrateur</option>
                   </select>
                 </div>

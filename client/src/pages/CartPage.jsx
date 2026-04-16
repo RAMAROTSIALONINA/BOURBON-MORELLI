@@ -9,6 +9,7 @@ import {
   CreditCard,
   Truck
 } from 'lucide-react';
+import cartService from '../services/cartService';
 
 const CartPage = () => {
   const [cartItems, setCartItems] = useState([]);
@@ -18,36 +19,38 @@ const CartPage = () => {
   const [total, setTotal] = useState(0);
 
   useEffect(() => {
-    // Simuler le chargement du panier
-    setTimeout(() => {
-      const mockCartItems = [
-        {
-          id: 1,
-          product_id: 1,
-          name: 'Nappe de Table Luxe',
-          slug: 'nappe-de-table-luxe',
-          price: 89.99,
-          quantity: 1,
-          image: '/images/Nape%20de%20table.PNG',
-          images: ['/images/Nape%20de%20table.PNG'],
-          category: { name: 'Nappes' }
-        },
-        {
-          id: 2,
-          product_id: 2,
-          name: 'T-shirt Premium',
-          slug: 'tshirt-premium',
-          price: 39.99,
-          quantity: 1,
-          image: '/images/T-shirts1.PNG',
-          images: ['/images/T-shirts1.PNG'],
-          category: { name: 'T-Shirts' }
-        }
-      ];
+    // Charger le panier depuis cartService
+    const loadCart = () => {
+      try {
+        const cartItems = cartService.getCartItems();
+        setCartItems(cartItems);
+        setLoading(false);
+      } catch (error) {
+        console.error('Erreur chargement panier:', error);
+        setLoading(false);
+      }
+    };
 
-      setCartItems(mockCartItems);
-      setLoading(false);
-    }, 1000);
+    loadCart();
+
+    // S'abonner aux changements du cartService
+    const unsubscribe = cartService.subscribe(() => {
+      loadCart();
+    });
+
+    // Écouter les changements dans le localStorage (pour les autres onglets)
+    const handleStorageChange = (e) => {
+      if (e.key === 'cart') {
+        loadCart();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -64,22 +67,49 @@ const CartPage = () => {
   const updateQuantity = (itemId, newQuantity) => {
     if (newQuantity < 1) return;
     
-    setCartItems(items =>
-      items.map(item => {
-        if (item.id === itemId) {
-          return {
-            ...item,
-            quantity: newQuantity,
-            total: item.price * newQuantity
-          };
-        }
-        return item;
-      })
-    );
+    // Utiliser cartService pour mettre à jour la quantité
+    const success = cartService.updateQuantity(itemId, newQuantity);
+    
+    if (success) {
+      // Mettre à jour l'état local pour l'interface
+      setCartItems(items =>
+        items.map(item => {
+          if (item.id === itemId) {
+            return {
+              ...item,
+              quantity: newQuantity,
+              total: item.price * newQuantity
+            };
+          }
+          return item;
+        })
+      );
+    }
   };
 
   const removeItem = (itemId) => {
-    setCartItems(items => items.filter(item => item.id !== itemId));
+    // Utiliser cartService pour retirer l'article
+    const success = cartService.removeFromCart(itemId);
+    
+    if (success) {
+      // Mettre à jour l'état local pour l'interface
+      setCartItems(items => items.filter(item => item.id !== itemId));
+    }
+  };
+
+  const clearCart = () => {
+    // Utiliser cartService pour vider le panier
+    const success = cartService.clearCart();
+    
+    if (success) {
+      // Mettre à jour l'état local pour l'interface
+      setCartItems([]);
+    }
+  };
+
+  const proceedToCheckout = () => {
+    // Rediriger vers la page de checkout
+    window.location.href = '/checkout';
   };
 
   const formatPrice = (price) => {
@@ -139,7 +169,7 @@ const CartPage = () => {
                     {/* Image produit */}
                     <div className="flex-shrink-0">
                       <img
-                        src={item.image_url || '/images/placeholder-product.jpg'}
+                        src={item.image || '/images/placeholder-product.jpg'}
                         alt={item.name}
                         className="w-24 h-24 object-cover rounded-lg"
                         onError={(e) => {
@@ -239,19 +269,26 @@ const CartPage = () => {
 
                 {/* Actions */}
                 <div className="space-y-3">
-                  <Link
-                    to="/checkout"
+                  <button
+                    onClick={proceedToCheckout}
                     className="w-full bg-primary-500 text-white py-3 rounded-lg font-medium hover:bg-primary-600 transition-colors flex items-center justify-center space-x-2"
                   >
                     <span>Commander</span>
                     <ArrowRight className="w-4 h-4" />
-                  </Link>
-
+                  </button>
+                  
+                  <button
+                    onClick={clearCart}
+                    className="w-full text-red-500 py-2 rounded-lg font-medium hover:bg-red-50 transition-colors"
+                  >
+                    Vider le panier
+                  </button>
+                  
                   <Link
                     to="/collections"
-                    className="w-full border border-neutral-200 text-neutral-700 py-3 rounded-lg font-medium hover:bg-neutral-50 transition-colors flex items-center justify-center space-x-2"
+                    className="w-full text-primary-500 py-2 rounded-lg font-medium hover:bg-primary-50 transition-colors text-center"
                   >
-                    <span>Continuer mes achats</span>
+                    Continuer mes achats
                   </Link>
                 </div>
 

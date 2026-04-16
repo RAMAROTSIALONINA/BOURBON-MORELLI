@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CreditCard, Truck, Shield, ArrowLeft, Check } from 'lucide-react';
+import { CreditCard, Truck, Shield, ArrowLeft, Check, Smartphone, Wallet } from 'lucide-react';
+import cartService from '../services/cartService';
 
 const Checkout = () => {
   const navigate = useNavigate();
@@ -8,7 +9,6 @@ const Checkout = () => {
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
-    // Informations de livraison
     shipping: {
       first_name: '',
       last_name: '',
@@ -20,35 +20,31 @@ const Checkout = () => {
       country: 'France',
       phone: ''
     },
-    // Informations de facturation
-    billing: {
-      same_as_shipping: true,
-      first_name: '',
-      last_name: '',
-      company: '',
-      street_address: '',
-      apartment: '',
-      city: '',
-      postal_code: '',
-      country: 'France',
-      phone: ''
-    },
-    // Paiement
     payment: {
       method: 'card',
+      card_type: 'visa',
       card_holder: '',
       card_number: '',
       card_expiry: '',
       cvv: '',
-      billing_address: '',
+      save_card: false,
       paypal_email: '',
-      paypal_name: '',
-      paypal_address: '',
-      mobile_operator: '',
+      paypal_password: '',
+      mobile_operator: 'mvol',
       mobile_phone: '',
       mobile_name: '',
-      save_card: false
+      mobile_code: ''
     }
+  });
+
+  const [fieldErrors, setFieldErrors] = useState({
+    shipping: {},
+    payment: {}
+  });
+
+  const [touchedFields, setTouchedFields] = useState({
+    shipping: {},
+    payment: {}
   });
 
   const [totals, setTotals] = useState({
@@ -58,56 +54,24 @@ const Checkout = () => {
   });
 
   useEffect(() => {
-    // Simuler le chargement du panier
-    setTimeout(() => {
-      const mockCartItems = [
-        {
-          id: 1,
-          name: 'Nappe de Table Luxe',
-          price: 89.99,
-          quantity: 1,
-          image_url: '/images/nappe-table.png',
-          images: ['/images/nappe-table.png'],
-          category: { name: 'Nappes' }
-        },
-        {
-          id: 2,
-          name: 'T-shirt Premium',
-          price: 39.99,
-          quantity: 1,
-          image_url: '/images/T-shirts1.PNG',
-          images: ['/images/T-shirts1.PNG'],
-          category: { name: 'T-Shirts' }
-        }
-      ];
+    const loadCart = () => {
+      try {
+        const cartData = cartService.getCart();
+        setCartItems(cartData.items || []);
+        
+        const subtotal = cartData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const shipping = subtotal >= 200 ? 0 : 9.99;
+        const total = subtotal + shipping;
+        
+        setTotals({ subtotal, shipping, total });
+        setLoading(false);
+      } catch (error) {
+        console.error('Erreur chargement panier:', error);
+        setLoading(false);
+      }
+    };
 
-      setCartItems(mockCartItems);
-      
-      // Logs des URLs d'images
-      mockCartItems.forEach(item => {
-        console.log(`Image URL pour ${item.name}:`, item.image_url);
-        console.log(`Images array pour ${item.name}:`, item.images);
-      });
-      
-      // Calcul plus robuste avec vérification
-      const subtotal = mockCartItems.reduce((sum, item) => {
-        const itemTotal = (item.price || 0) * (item.quantity || 0);
-        console.log(`🧮 Calcul: ${item.name} = ${item.price} × ${item.quantity} = ${itemTotal}`);
-        return sum + itemTotal;
-      }, 0);
-      
-      const shipping = subtotal >= 200 ? 0 : 9.99;
-      
-      console.log(`💰 Totaux calculés: Sous-total=${subtotal}, Livraison=${shipping}, Total=${subtotal + shipping}`);
-      
-      setTotals({
-        subtotal,
-        shipping,
-        total: subtotal + shipping
-      });
-      
-      setLoading(false);
-    }, 1000);
+    loadCart();
   }, []);
 
   const handleInputChange = (section, field, value) => {
@@ -118,10 +82,218 @@ const Checkout = () => {
         [field]: value
       }
     }));
+
+    setTouchedFields(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: true
+      }
+    }));
+
+    validateField(section, field, value);
+  };
+
+  const validateField = (section, field, value) => {
+    let error = '';
+    
+    if (section === 'shipping') {
+      switch (field) {
+        case 'first_name':
+          if (!value || value.trim().length < 2) {
+            error = 'Le prénom doit contenir au moins 2 caractères';
+          }
+          break;
+        case 'last_name':
+          if (!value || value.trim().length < 2) {
+            error = 'Le nom doit contenir au moins 2 caractères';
+          }
+          break;
+        case 'street_address':
+          if (!value || value.trim().length < 5) {
+            error = 'L\'adresse doit contenir au moins 5 caractères';
+          }
+          break;
+        case 'city':
+          if (!value || value.trim().length < 2) {
+            error = 'La ville doit contenir au moins 2 caractères';
+          }
+          break;
+        case 'postal_code':
+          if (!value || !/^\d{4,5}$/.test(value)) {
+            error = 'Le code postal doit contenir 4 ou 5 chiffres';
+          }
+          break;
+        case 'phone':
+          if (!value || !/^[0-9\s\-+()]{8,15}$/.test(value)) {
+            error = 'Le numéro de téléphone doit contenir 8 à 15 chiffres';
+          }
+          break;
+      default:
+        break;
+      }
+    } else if (section === 'payment') {
+      switch (field) {
+        case 'card_holder':
+          if (formData.payment.method === 'card' && (!value || value.trim().length < 3)) {
+            error = 'Le nom du titulaire doit contenir au moins 3 caractères';
+          }
+          break;
+        case 'card_number':
+          if (formData.payment.method === 'card' && (!value || !/^\d{13,19}$/.test(value.replace(/\s/g, '')))) {
+            error = 'Le numéro de carte doit contenir 13 à 19 chiffres';
+          }
+          break;
+        case 'card_expiry':
+          if (formData.payment.method === 'card' && (!value || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(value))) {
+            error = 'La date d\'expiration doit être au format MM/AA';
+          }
+          break;
+        case 'cvv':
+          if (formData.payment.method === 'card' && (!value || !/^\d{3,4}$/.test(value))) {
+            error = 'Le CVV doit contenir 3 ou 4 chiffres';
+          }
+          break;
+        case 'paypal_email':
+          if (formData.payment.method === 'paypal' && (!value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))) {
+            error = 'Veuillez entrer une adresse email valide';
+          }
+          break;
+        case 'mobile_phone':
+          if (formData.payment.method === 'mobile' && (!value || !/^[0-9\s\-+()]{8,15}$/.test(value))) {
+            error = 'Le numéro de téléphone doit contenir 8 à 15 chiffres';
+          }
+          break;
+        case 'mobile_name':
+          if (formData.payment.method === 'mobile' && (!value || value.trim().length < 3)) {
+            error = 'Le nom complet doit contenir au moins 3 caractères';
+          }
+          break;
+      default:
+        break;
+      }
+    }
+    
+    setFieldErrors(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: error
+      }
+    }));
+  };
+
+  const validateShippingStep = () => {
+    const shipping = formData.shipping;
+    const errors = [];
+    
+    if (!shipping.first_name || shipping.first_name.trim().length < 2) {
+      errors.push('Le prénom doit contenir au moins 2 caractères');
+    }
+    
+    if (!shipping.last_name || shipping.last_name.trim().length < 2) {
+      errors.push('Le nom doit contenir au moins 2 caractères');
+    }
+    
+    if (!shipping.street_address || shipping.street_address.trim().length < 5) {
+      errors.push('L\'adresse doit contenir au moins 5 caractères');
+    }
+    
+    if (!shipping.city || shipping.city.trim().length < 2) {
+      errors.push('La ville doit contenir au moins 2 caractères');
+    }
+    
+    if (!shipping.postal_code || !/^\d{4,5}$/.test(shipping.postal_code)) {
+      errors.push('Le code postal doit contenir 4 ou 5 chiffres');
+    }
+    
+    if (!shipping.phone || !/^[0-9\s\-+()]{8,15}$/.test(shipping.phone)) {
+      errors.push('Le numéro de téléphone doit contenir 8 à 15 chiffres');
+    }
+    
+    if (errors.length > 0) {
+      alert('ERREURS FORMULAIRE LIVRAISON:\n\n' + errors.map((error, index) => `${index + 1}. ${error}`).join('\n'));
+      return false;
+    }
+    
+    return true;
+  };
+
+  const validatePaymentStep = () => {
+    const payment = formData.payment;
+    const errors = [];
+    
+    if (!payment.method) {
+      errors.push('Veuillez choisir une méthode de paiement');
+    }
+    
+    switch (payment.method) {
+      case 'card':
+        if (!payment.card_type) {
+          errors.push('Veuillez choisir le type de carte');
+        }
+        if (!payment.card_holder || payment.card_holder.trim().length < 3) {
+          errors.push('Le nom du titulaire doit contenir au moins 3 caractères');
+        }
+        if (!payment.card_number || !/^\d{13,19}$/.test(payment.card_number.replace(/\s/g, ''))) {
+          errors.push('Le numéro de carte doit contenir 13 à 19 chiffres');
+        }
+        if (!payment.card_expiry || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(payment.card_expiry)) {
+          errors.push('La date d\'expiration doit être au format MM/AA');
+        }
+        if (!payment.cvv || !/^\d{3,4}$/.test(payment.cvv)) {
+          errors.push('Le CVV doit contenir 3 ou 4 chiffres');
+        }
+        break;
+        
+      case 'paypal':
+        if (!payment.paypal_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payment.paypal_email)) {
+          errors.push('Veuillez entrer une adresse email PayPal valide');
+        }
+        break;
+        
+      case 'mobile':
+        if (!payment.mobile_operator) {
+          errors.push('Veuillez choisir un opérateur Mobile Money');
+        }
+        if (!payment.mobile_phone || !/^[0-9\s\-+()]{8,15}$/.test(payment.mobile_phone)) {
+          errors.push('Le numéro de téléphone doit contenir 8 à 15 chiffres');
+        }
+        if (!payment.mobile_name || payment.mobile_name.trim().length < 3) {
+          errors.push('Le nom complet doit contenir au moins 3 caractères');
+        }
+        break;
+      default:
+        errors.push('Méthode de paiement non reconnue');
+        break;
+    }
+    
+    if (errors.length > 0) {
+      alert('ERREURS FORMULAIRE PAIEMENT:\n\n' + errors.map((error, index) => `${index + 1}. ${error}`).join('\n'));
+      return false;
+    }
+    
+    return true;
   };
 
   const handleNextStep = () => {
-    if (currentStep < 3) {
+    let isValid = false;
+    
+    switch (currentStep) {
+      case 1:
+        isValid = validateShippingStep();
+        break;
+      case 2:
+        isValid = validatePaymentStep();
+        break;
+      case 3:
+        isValid = true; // Étape finale, toujours valide
+        break;
+      default:
+        isValid = false;
+    }
+    
+    if (isValid && currentStep < 3) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -132,10 +304,23 @@ const Checkout = () => {
     }
   };
 
-  const handlePlaceOrder = () => {
-    console.log('Commande passée:', { formData, cartItems, totals });
-    // Rediriger vers la page de confirmation
-    navigate('/order-confirmation');
+  const processPayment = () => {
+    alert('TEST: Traitement du paiement en cours...\n\nMéthode: ' + formData.payment.method.toUpperCase() + '\nMontant: ' + formatPrice(totals.total));
+    
+    setTimeout(() => {
+      const orderData = {
+        customerName: `${formData.shipping.first_name} ${formData.shipping.last_name}`,
+        items: cartItems,
+        total: totals.total,
+        payment: {
+          method: formData.payment.method,
+          status: 'paid'
+        }
+      };
+      
+      cartService.clearCart();
+      navigate('/order-confirmation', { state: { order: orderData, paymentMethod: formData.payment.method } });
+    }, 2000);
   };
 
   const formatPrice = (price) => {
@@ -169,130 +354,124 @@ const Checkout = () => {
   return (
     <div className="min-h-screen bg-neutral-50">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-8">
           <Link to="/cart" className="inline-flex items-center space-x-2 text-neutral-600 hover:text-primary-500 mb-4">
             <ArrowLeft className="w-4 h-4" />
             <span>Retour au panier</span>
           </Link>
-          <h1 className="text-3xl font-luxury font-bold text-neutral-900">
-            Commande
-          </h1>
+          <h1 className="text-3xl font-luxury font-bold text-neutral-900">Commande</h1>
         </div>
 
-        {/* Progression */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             {[1, 2, 3].map((step) => (
               <div key={step} className="flex items-center">
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${
-                  step <= currentStep
-                    ? 'bg-primary-500 border-primary-500 text-white'
-                    : 'border-neutral-300 text-neutral-400'
+                  step <= currentStep ? 'bg-primary-500 border-primary-500 text-white' : 'border-neutral-300 text-neutral-400'
                 }`}>
-                  {step < currentStep ? (
-                    <Check className="w-5 h-5" />
-                  ) : (
-                    step
-                  )}
+                  {step < currentStep ? <Check className="w-5 h-5" /> : step}
                 </div>
-                <span className={`ml-3 ${
-                  step <= currentStep ? 'text-primary-500 font-medium' : 'text-neutral-400'
-                }`}>
+                <span className={`ml-3 ${step <= currentStep ? 'text-primary-500 font-medium' : 'text-neutral-400'}`}>
                   {step === 1 ? 'Livraison' : step === 2 ? 'Paiement' : 'Confirmation'}
                 </span>
-                {step < 3 && (
-                  <div className={`flex-1 h-1 mx-4 ${
-                    step < currentStep ? 'bg-primary-500' : 'bg-neutral-300'
-                  }`} />
-                )}
+                {step < 3 && <div className={`flex-1 h-1 mx-4 ${step < currentStep ? 'bg-primary-500' : 'bg-neutral-300'}`} />}
               </div>
             ))}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Formulaire */}
           <div className="lg:col-span-2">
             {currentStep === 1 && (
-              /* Étape 1: Adresse de livraison */
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-6">Adresse de livraison</h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    placeholder="Prénom*"
-                    value={formData.shipping.first_name}
-                    onChange={(e) => handleInputChange('shipping', 'first_name', e.target.value)}
-                    className="input-luxury"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Nom*"
-                    value={formData.shipping.last_name}
-                    onChange={(e) => handleInputChange('shipping', 'last_name', e.target.value)}
-                    className="input-luxury"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Entreprise (optionnel)"
-                    value={formData.shipping.company}
-                    onChange={(e) => handleInputChange('shipping', 'company', e.target.value)}
-                    className="input-luxury md:col-span-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Adresse*"
-                    value={formData.shipping.street_address}
-                    onChange={(e) => handleInputChange('shipping', 'street_address', e.target.value)}
-                    className="input-luxury md:col-span-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Appartement, suite, etc. (optionnel)"
-                    value={formData.shipping.apartment}
-                    onChange={(e) => handleInputChange('shipping', 'apartment', e.target.value)}
-                    className="input-luxury md:col-span-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Ville*"
-                    value={formData.shipping.city}
-                    onChange={(e) => handleInputChange('shipping', 'city', e.target.value)}
-                    className="input-luxury"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Code postal*"
-                    value={formData.shipping.postal_code}
-                    onChange={(e) => handleInputChange('shipping', 'postal_code', e.target.value)}
-                    className="input-luxury"
-                  />
-                  <select
-                    value={formData.shipping.country}
-                    onChange={(e) => handleInputChange('shipping', 'country', e.target.value)}
-                    className="input-luxury"
-                  >
-                    <option value="France">France</option>
-                    <option value="Belgique">Belgique</option>
-                    <option value="Suisse">Suisse</option>
-                    <option value="Luxembourg">Luxembourg</option>
-                  </select>
-                  <input
-                    type="tel"
-                    placeholder="Téléphone*"
-                    value={formData.shipping.phone}
-                    onChange={(e) => handleInputChange('shipping', 'phone', e.target.value)}
-                    className="input-luxury"
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Prénom*</label>
+                    <input
+                      type="text"
+                      placeholder="Prénom*"
+                      value={formData.shipping.first_name}
+                      onChange={(e) => handleInputChange('shipping', 'first_name', e.target.value)}
+                      className={`input-luxury ${touchedFields.shipping.first_name && fieldErrors.shipping.first_name ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.first_name && fieldErrors.shipping.first_name && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.first_name}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Nom*</label>
+                    <input
+                      type="text"
+                      placeholder="Nom*"
+                      value={formData.shipping.last_name}
+                      onChange={(e) => handleInputChange('shipping', 'last_name', e.target.value)}
+                      className={`input-luxury ${touchedFields.shipping.last_name && fieldErrors.shipping.last_name ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.last_name && fieldErrors.shipping.last_name && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.last_name}</p>
+                    )}
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Adresse*</label>
+                    <input
+                      type="text"
+                      placeholder="Adresse*"
+                      value={formData.shipping.street_address}
+                      onChange={(e) => handleInputChange('shipping', 'street_address', e.target.value)}
+                      className={`input-luxury ${touchedFields.shipping.street_address && fieldErrors.shipping.street_address ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.street_address && fieldErrors.shipping.street_address && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.street_address}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Ville*</label>
+                    <input
+                      type="text"
+                      placeholder="Ville*"
+                      value={formData.shipping.city}
+                      onChange={(e) => handleInputChange('shipping', 'city', e.target.value)}
+                      className={`input-luxury ${touchedFields.shipping.city && fieldErrors.shipping.city ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.city && fieldErrors.shipping.city && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.city}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Code postal*</label>
+                    <input
+                      type="text"
+                      placeholder="Code postal*"
+                      value={formData.shipping.postal_code}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '');
+                        handleInputChange('shipping', 'postal_code', value);
+                      }}
+                      className={`input-luxury ${touchedFields.shipping.postal_code && fieldErrors.shipping.postal_code ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.postal_code && fieldErrors.shipping.postal_code && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.postal_code}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Téléphone*</label>
+                    <input
+                      type="tel"
+                      placeholder="Téléphone*"
+                      value={formData.shipping.phone}
+                      onChange={(e) => handleInputChange('shipping', 'phone', e.target.value)}
+                      className={`input-luxury ${touchedFields.shipping.phone && fieldErrors.shipping.phone ? 'border-red-500' : ''}`}
+                    />
+                    {touchedFields.shipping.phone && fieldErrors.shipping.phone && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.shipping.phone}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={handleNextStep}
-                    className="btn-luxury"
-                  >
+                  <button onClick={handleNextStep} className="btn-luxury">
                     Continuer vers le paiement
                   </button>
                 </div>
@@ -300,218 +479,202 @@ const Checkout = () => {
             )}
 
             {currentStep === 2 && (
-              /* Étape 2: Paiement */
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-6">Méthode de paiement</h2>
                 
                 <div className="space-y-4 mb-6">
-                  <label className="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-neutral-50">
+                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
                     <input
                       type="radio"
-                      name="payment"
-                      value="stripe"
-                      checked={formData.payment.method === 'stripe'}
+                      name="payment_method"
+                      value="card"
+                      checked={formData.payment.method === 'card'}
                       onChange={(e) => handleInputChange('payment', 'method', e.target.value)}
                       className="mr-3"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium">Carte de crédit</div>
-                      <div className="text-sm text-neutral-500">Visa, Mastercard, American Express</div>
-                    </div>
-                    <CreditCard className="w-5 h-5 text-neutral-400" />
+                    <CreditCard className="w-5 h-5 mr-2 text-blue-600" />
+                    <span className="font-medium">Carte de crédit</span>
                   </label>
-
-                  <label className="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-neutral-50">
+                  
+                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
                     <input
                       type="radio"
-                      name="payment"
+                      name="payment_method"
                       value="paypal"
                       checked={formData.payment.method === 'paypal'}
                       onChange={(e) => handleInputChange('payment', 'method', e.target.value)}
                       className="mr-3"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium">PayPal</div>
-                      <div className="text-sm text-neutral-500">Paiement sécurisé avec PayPal</div>
-                    </div>
+                    <Wallet className="w-5 h-5 mr-2 text-blue-500" />
+                    <span className="font-medium">PayPal</span>
                   </label>
-
-                  <label className="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-neutral-50">
+                  
+                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
                     <input
                       type="radio"
-                      name="payment"
-                      value="mobile_money"
-                      checked={formData.payment.method === 'mobile_money'}
+                      name="payment_method"
+                      value="mobile"
+                      checked={formData.payment.method === 'mobile'}
                       onChange={(e) => handleInputChange('payment', 'method', e.target.value)}
                       className="mr-3"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium">Mobile Money</div>
-                      <div className="text-sm text-neutral-500">MVola, Orange Money, Airtel Money</div>
-                    </div>
+                    <Smartphone className="w-5 h-5 mr-2 text-green-600" />
+                    <span className="font-medium">Mobile Money</span>
                   </label>
                 </div>
 
-                {/* Formulaire Carte de crédit */}
-                {formData.payment.method === 'stripe' && (
-                  <div className="bg-neutral-50 p-6 rounded-lg mb-6">
-                    <h3 className="font-medium mb-4">Informations de carte</h3>
-                    <div className="space-y-4">
+                {formData.payment.method === 'card' && (
+                  <div className="space-y-4">
+                    <select
+                      value={formData.payment.card_type}
+                      onChange={(e) => handleInputChange('payment', 'card_type', e.target.value)}
+                      className="w-full p-3 border border-neutral-200 rounded-lg"
+                    >
+                      <option value="visa">Visa</option>
+                      <option value="mastercard">Mastercard</option>
+                      <option value="amex">American Express</option>
+                    </select>
+                    
+                    <input
+                      type="text"
+                      placeholder="Nom du titulaire"
+                      value={formData.payment.card_holder}
+                      onChange={(e) => handleInputChange('payment', 'card_holder', e.target.value)}
+                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.card_holder && fieldErrors.payment.card_holder ? 'border-red-500' : 'border-neutral-200'}`}
+                    />
+                    {touchedFields.payment.card_holder && fieldErrors.payment.card_holder && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_holder}</p>
+                    )}
+                    
+                    <input
+                      type="text"
+                      placeholder="Numéro de carte"
+                      value={formData.payment.card_number}
+                      onChange={(e) => handleInputChange('payment', 'card_number', e.target.value)}
+                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.card_number && fieldErrors.payment.card_number ? 'border-red-500' : 'border-neutral-200'}`}
+                    />
+                    {touchedFields.payment.card_number && fieldErrors.payment.card_number && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_number}</p>
+                    )}
+                    
+                    <div className="grid grid-cols-2 gap-4">
                       <input
                         type="text"
-                        placeholder="Nom du titulaire*"
-                        value={formData.payment.card_holder || ''}
-                        onChange={(e) => handleInputChange('payment', 'card_holder', e.target.value)}
-                        className="input-luxury"
+                        placeholder="MM/AA"
+                        value={formData.payment.card_expiry}
+                        onChange={(e) => handleInputChange('payment', 'card_expiry', e.target.value)}
+                        className={`w-full p-3 border rounded-lg ${touchedFields.payment.card_expiry && fieldErrors.payment.card_expiry ? 'border-red-500' : 'border-neutral-200'}`}
                       />
+                      {touchedFields.payment.card_expiry && fieldErrors.payment.card_expiry && (
+                        <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_expiry}</p>
+                      )}
+                      
                       <input
                         type="text"
-                        placeholder="Numéro de carte*"
-                        value={formData.payment.card_number || ''}
-                        onChange={(e) => handleInputChange('payment', 'card_number', e.target.value)}
-                        className="input-luxury"
+                        placeholder="CVV"
+                        value={formData.payment.cvv}
+                        onChange={(e) => handleInputChange('payment', 'cvv', e.target.value)}
+                        className={`w-full p-3 border rounded-lg ${touchedFields.payment.cvv && fieldErrors.payment.cvv ? 'border-red-500' : 'border-neutral-200'}`}
                       />
-                      <div className="grid grid-cols-2 gap-4">
-                        <input
-                          type="text"
-                          placeholder="MM/AA*"
-                          value={formData.payment.card_expiry || ''}
-                          onChange={(e) => handleInputChange('payment', 'card_expiry', e.target.value)}
-                          className="input-luxury"
-                        />
-                        <input
-                          type="text"
-                          placeholder="CVV*"
-                          value={formData.payment.cvv || ''}
-                          onChange={(e) => handleInputChange('payment', 'cvv', e.target.value)}
-                          className="input-luxury"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Adresse de facturation*"
-                        value={formData.payment.billing_address || ''}
-                        onChange={(e) => handleInputChange('payment', 'billing_address', e.target.value)}
-                        className="input-luxury"
-                      />
+                      {touchedFields.payment.cvv && fieldErrors.payment.cvv && (
+                        <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.cvv}</p>
+                      )}
                     </div>
                   </div>
                 )}
 
-                {/* Formulaire PayPal */}
                 {formData.payment.method === 'paypal' && (
-                  <div className="bg-neutral-50 p-6 rounded-lg mb-6">
-                    <h3 className="font-medium mb-4">Informations PayPal</h3>
-                    <div className="space-y-4">
-                      <input
-                        type="email"
-                        placeholder="Email PayPal*"
-                        value={formData.payment.paypal_email || ''}
-                        onChange={(e) => handleInputChange('payment', 'paypal_email', e.target.value)}
-                        className="input-luxury"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Nom complet*"
-                        value={formData.payment.paypal_name || ''}
-                        onChange={(e) => handleInputChange('payment', 'paypal_name', e.target.value)}
-                        className="input-luxury"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Adresse*"
-                        value={formData.payment.paypal_address || ''}
-                        onChange={(e) => handleInputChange('payment', 'paypal_address', e.target.value)}
-                        className="input-luxury"
-                      />
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <p className="text-sm text-blue-600">
-                          💡 Vous serez redirigé vers PayPal pour compléter le paiement en toute sécurité.
-                        </p>
-                      </div>
-                    </div>
+                  <div className="space-y-4">
+                    <input
+                      type="email"
+                      placeholder="Email PayPal"
+                      value={formData.payment.paypal_email}
+                      onChange={(e) => handleInputChange('payment', 'paypal_email', e.target.value)}
+                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.paypal_email && fieldErrors.payment.paypal_email ? 'border-red-500' : 'border-neutral-200'}`}
+                    />
+                    {touchedFields.payment.paypal_email && fieldErrors.payment.paypal_email && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.paypal_email}</p>
+                    )}
                   </div>
                 )}
 
-                {/* Formulaire Mobile Money */}
-                {formData.payment.method === 'mobile_money' && (
-                  <div className="bg-neutral-50 p-6 rounded-lg mb-6">
-                    <h3 className="font-medium mb-4">Informations Mobile Money</h3>
-                    <div className="space-y-4">
-                      <select
-                        value={formData.payment.mobile_operator || ''}
-                        onChange={(e) => handleInputChange('payment', 'mobile_operator', e.target.value)}
-                        className="input-luxury"
-                      >
-                        <option value="">Choisir l'opérateur*</option>
-                        <option value="mvola">MVola</option>
-                        <option value="orange_money">Orange Money</option>
-                        <option value="airtel_money">Airtel Money</option>
-                      </select>
-                      <input
-                        type="tel"
-                        placeholder="Numéro de téléphone*"
-                        value={formData.payment.mobile_phone || ''}
-                        onChange={(e) => handleInputChange('payment', 'mobile_phone', e.target.value)}
-                        className="input-luxury"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Nom du client*"
-                        value={formData.payment.mobile_name || ''}
-                        onChange={(e) => handleInputChange('payment', 'mobile_name', e.target.value)}
-                        className="input-luxury"
-                      />
-                      <div className="bg-green-50 p-4 rounded-lg">
-                        <p className="text-sm text-green-600">
-                          💰 Montant à payer : <span className="font-bold">{formatPrice(totals.total)}</span>
-                        </p>
-                        <p className="text-sm text-green-600 mt-2">
-                          📱 Instructions de paiement seront envoyées après confirmation.
-                        </p>
-                      </div>
+                {formData.payment.method === 'mobile' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <label className="flex flex-col items-center p-3 border-2 border-neutral-200 rounded-lg cursor-pointer">
+                        <input
+                          type="radio"
+                          name="mobile_operator"
+                          value="mvol"
+                          checked={formData.payment.mobile_operator === 'mvol'}
+                          onChange={(e) => handleInputChange('payment', 'mobile_operator', e.target.value)}
+                          className="sr-only"
+                        />
+                        <Smartphone className="w-6 h-6 mb-1" />
+                        <span className="text-sm">MVola</span>
+                      </label>
+                      <label className="flex flex-col items-center p-3 border-2 border-neutral-200 rounded-lg cursor-pointer">
+                        <input
+                          type="radio"
+                          name="mobile_operator"
+                          value="orange"
+                          checked={formData.payment.mobile_operator === 'orange'}
+                          onChange={(e) => handleInputChange('payment', 'mobile_operator', e.target.value)}
+                          className="sr-only"
+                        />
+                        <Smartphone className="w-6 h-6 mb-1" />
+                        <span className="text-sm">Orange</span>
+                      </label>
+                      <label className="flex flex-col items-center p-3 border-2 border-neutral-200 rounded-lg cursor-pointer">
+                        <input
+                          type="radio"
+                          name="mobile_operator"
+                          value="airtel"
+                          checked={formData.payment.mobile_operator === 'airtel'}
+                          onChange={(e) => handleInputChange('payment', 'mobile_operator', e.target.value)}
+                          className="sr-only"
+                        />
+                        <Smartphone className="w-6 h-6 mb-1" />
+                        <span className="text-sm">Airtel</span>
+                      </label>
                     </div>
+                    
+                    <input
+                      type="tel"
+                      placeholder="Numéro de téléphone"
+                      value={formData.payment.mobile_phone}
+                      onChange={(e) => handleInputChange('payment', 'mobile_phone', e.target.value)}
+                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.mobile_phone && fieldErrors.payment.mobile_phone ? 'border-red-500' : 'border-neutral-200'}`}
+                    />
+                    {touchedFields.payment.mobile_phone && fieldErrors.payment.mobile_phone && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.mobile_phone}</p>
+                    )}
+                    
+                    <input
+                      type="text"
+                      placeholder="Nom complet"
+                      value={formData.payment.mobile_name}
+                      onChange={(e) => handleInputChange('payment', 'mobile_name', e.target.value)}
+                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.mobile_name && fieldErrors.payment.mobile_name ? 'border-red-500' : 'border-neutral-200'}`}
+                    />
+                    {touchedFields.payment.mobile_name && fieldErrors.payment.mobile_name && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.mobile_name}</p>
+                    )}
                   </div>
                 )}
 
-                <label className="flex items-center mb-6">
-                  <input
-                    type="checkbox"
-                    checked={formData.payment.save_card}
-                    onChange={(e) => handleInputChange('payment', 'save_card', e.target.checked)}
-                    className="mr-2"
-                  />
-                  <span className="text-sm">Enregistrer mes informations pour la prochaine fois</span>
-                </label>
-
-                {/* Sécurité */}
-                <div className="bg-neutral-50 p-4 rounded-lg mb-6">
-                  <div className="flex items-center space-x-2 text-sm text-neutral-600">
-                    <Shield className="w-4 h-4 text-primary-500" />
-                    <span>Paiement 100% sécurisé avec cryptage SSL</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between">
-                  <button
-                    onClick={handlePrevStep}
-                    className="btn-secondary"
-                  >
+                <div className="flex justify-between mt-6">
+                  <button onClick={handlePrevStep} className="btn-secondary">
                     Retour
                   </button>
-                  <button
-                    onClick={handleNextStep}
-                    className="btn-luxury"
-                  >
-                    {formData.payment.method === 'paypal' ? 'Payer avec PayPal' : 
-                     formData.payment.method === 'mobile_money' ? 'Confirmer paiement' : 'Payer maintenant'}
+                  <button onClick={handleNextStep} className="btn-luxury">
+                    Continuer
                   </button>
                 </div>
               </div>
             )}
 
             {currentStep === 3 && (
-              /* Étape 3: Confirmation */
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-6">Confirmation de commande</h2>
                 
@@ -525,14 +688,12 @@ const Checkout = () => {
                   </p>
                 </div>
 
-                {/* Récapitulatif de la commande */}
                 <div className="space-y-4 mb-6">
                   <div>
                     <h3 className="font-medium mb-2">Adresse de livraison</h3>
                     <div className="text-sm text-neutral-600">
                       {formData.shipping.first_name} {formData.shipping.last_name}<br />
                       {formData.shipping.street_address}<br />
-                      {formData.shipping.apartment && <>{formData.shipping.apartment}<br /></>}
                       {formData.shipping.postal_code} {formData.shipping.city}<br />
                       {formData.shipping.country}
                     </div>
@@ -541,62 +702,49 @@ const Checkout = () => {
                   <div>
                     <h3 className="font-medium mb-2">Méthode de paiement</h3>
                     <div className="text-sm text-neutral-600">
-                      {formData.payment.method === 'stripe' ? 'Carte de crédit' : 'PayPal'}
+                      {formData.payment.method === 'card' ? 'Carte de crédit' : 
+                       formData.payment.method === 'paypal' ? 'PayPal' : 'Mobile Money'}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex justify-between">
-                  <button
-                    onClick={handlePrevStep}
-                    className="btn-secondary"
-                  >
+                  <button onClick={handlePrevStep} className="btn-secondary">
                     Retour
                   </button>
-                  <button
-                    onClick={handlePlaceOrder}
-                    className="btn-luxury flex items-center space-x-2"
-                  >
-                    <span>Confirmer la commande</span>
-                    <Truck className="w-4 h-4" />
+                  <button onClick={processPayment} className="btn-luxury">
+                    Confirmer la commande
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Récapitulatif */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-sm p-6 sticky top-4">
               <h2 className="text-xl font-semibold mb-6">Récapitulatif</h2>
 
-              {/* Articles */}
               <div className="space-y-4 mb-6">
                 {cartItems.map((item) => (
-                  <div key={item.id} className="flex space-x-3">
+                  <div key={item.id} className="flex items-center space-x-4">
                     <img
-                      src={item.image_url || item.images?.[0] || '/images/BOURBON MORELLI.png'}
+                      src={item.image || item.image_url || item.images?.[0] || '/images/placeholder-product.jpg'}
                       alt={item.name}
-                      className="w-16 h-16 object-cover rounded"
-                      onLoad={(e) => {
-                        console.log(`Image chargée: ${item.name} -> ${e.target.src}`);
-                      }}
+                      className="w-16 h-16 object-cover rounded-lg"
                       onError={(e) => {
-                        console.error(`Image ERROR: ${item.name} -> ${e.target.src}`);
-                        e.target.src = '/images/BOURBON MORELLI.png';
+                        e.target.src = '/images/placeholder-product.jpg';
                       }}
                     />
                     <div className="flex-1">
-                      <h4 className="font-medium text-sm">{item.name}</h4>
-                      <p className="text-sm text-neutral-500">Qté: {item.quantity}</p>
-                      <p className="font-medium text-primary-500">{formatPrice(item.price * item.quantity)}</p>
+                      <h4 className="font-medium">{item.name}</h4>
+                      <p className="text-sm text-neutral-600">Quantité: {item.quantity}</p>
                     </div>
+                    <p className="font-medium">{formatPrice(item.price * item.quantity)}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Totaux */}
-              <div className="border-t pt-4 space-y-2">
+              <div className="space-y-2 mb-6">
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-600">Sous-total</span>
                   <span>{formatPrice(totals.subtotal)}</span>
@@ -611,11 +759,10 @@ const Checkout = () => {
                 </div>
               </div>
 
-              {/* Services */}
               <div className="mt-6 pt-6 border-t space-y-2">
                 <div className="flex items-center space-x-2 text-sm text-neutral-600">
                   <Truck className="w-4 h-4 text-primary-500" />
-                  <span>Livraison offerte à partir de 200€</span>
+                  <span>Livraison offerte à partir de 200</span>
                 </div>
                 <div className="flex items-center space-x-2 text-sm text-neutral-600">
                   <Shield className="w-4 h-4 text-primary-500" />
