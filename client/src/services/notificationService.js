@@ -1,296 +1,129 @@
-import axios from 'axios';
+import { create } from 'zustand';
 
-const API_BASE_URL = 'http://localhost:5003/api';
+// Clés localStorage
+const NOTIF_STORAGE_KEY = 'admin_notifications';
+const HISTORY_STORAGE_KEY = 'admin_activity_history';
+const MAX_NOTIFICATIONS = 50;
+const MAX_HISTORY = 500;
 
-// Configuration d'axios avec le token d'authentification
-const getAuthConfig = async () => {
-  let token = localStorage.getItem('adminToken');
-  
-  // Si aucun token, essayer d'en obtenir un temporaire
-  if (!token) {
-    try {
-      token = await getTempAdminToken();
-    } catch (error) {
-      console.error('Impossible d\'obtenir un token admin:', error);
-      throw new Error('Token d\'authentification requis');
-    }
-  }
-  
-  return {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    }
-  };
-};
-
-// Obtenir un token admin temporaire pour le développement
-const getTempAdminToken = async () => {
+// Helpers localStorage
+const loadFromStorage = (key, fallback = []) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/users/admin/temp-token`);
-    return response.data.token;
-  } catch (error) {
-    console.error('Erreur lors de l\'obtention du token temporaire:', error);
-    throw error;
+    const data = JSON.parse(localStorage.getItem(key) || 'null');
+    return Array.isArray(data) ? data : fallback;
+  } catch (e) {
+    return fallback;
   }
 };
 
-const notificationService = {
-  // Récupérer toutes les notifications
-  getAllNotifications: async () => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les notifications' };
-    }
+const saveToStorage = (key, data) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error('Erreur sauvegarde:', e);
+  }
+};
+
+const initialNotifs = loadFromStorage(NOTIF_STORAGE_KEY, []);
+const initialHistory = loadFromStorage(HISTORY_STORAGE_KEY, []);
+
+// Service global de notifications + historique d'activité
+const useNotificationStore = create((set, get) => ({
+  notifications: initialNotifs,
+  unreadCount: initialNotifs.filter(n => !n.read).length,
+  history: initialHistory,
+
+  // Ajouter une notification (persistée)
+  addNotification: (notification) => {
+    const id = Date.now() + Math.random();
+    const newNotification = {
+      id,
+      read: false,
+      timestamp: new Date().toISOString(),
+      time: new Date().toLocaleString('fr-FR'),
+      ...notification
+    };
+
+    set((state) => {
+      const updated = [...state.notifications, newNotification].slice(-MAX_NOTIFICATIONS);
+      saveToStorage(NOTIF_STORAGE_KEY, updated);
+      return {
+        notifications: updated,
+        unreadCount: updated.filter(n => !n.read).length
+      };
+    });
+
+    // Également ajouter à l'historique d'activité
+    get().addActivity({
+      type: notification.type || 'notification',
+      title: notification.title,
+      message: notification.message,
+      link: notification.link,
+      category: notification.category || 'Notification'
+    });
   },
 
-  // Récupérer une notification par son ID
-  getNotificationById: async (notificationId) => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/${notificationId}`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération de la notification:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer la notification' };
-    }
+  // Ajouter une activité à l'historique (tracking général)
+  addActivity: (activity) => {
+    const entry = {
+      id: Date.now() + Math.random(),
+      timestamp: new Date().toISOString(),
+      time: new Date().toLocaleString('fr-FR'),
+      ...activity
+    };
+    set((state) => {
+      const updated = [...state.history, entry].slice(-MAX_HISTORY);
+      saveToStorage(HISTORY_STORAGE_KEY, updated);
+      return { history: updated };
+    });
   },
 
-  // Créer une nouvelle notification
-  createNotification: async (notificationData) => {
-    try {
-      console.log('=== CREATE NOTIFICATION ===');
-      console.log('Notification data:', JSON.stringify(notificationData, null, 2));
-      
-      const config = await getAuthConfig();
-      const response = await axios.post(
-        `${API_BASE_URL}/notifications`,
-        notificationData,
-        config
+  // Marquer une notification comme lue
+  markAsRead: (notificationId) => {
+    set((state) => {
+      const updated = state.notifications.map(n =>
+        n.id === notificationId ? { ...n, read: true } : n
       );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la création de la notification:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de créer la notification' };
-    }
+      saveToStorage(NOTIF_STORAGE_KEY, updated);
+      return {
+        notifications: updated,
+        unreadCount: updated.filter(n => !n.read).length
+      };
+    });
   },
 
-  // Mettre à jour une notification
-  updateNotification: async (notificationId, notificationData) => {
-    try {
-      console.log('=== UPDATE NOTIFICATION ===');
-      console.log('Notification ID:', notificationId);
-      console.log('Notification data:', JSON.stringify(notificationData, null, 2));
-      
-      const config = await getAuthConfig();
-      const response = await axios.put(
-        `${API_BASE_URL}/notifications/${notificationId}`,
-        notificationData,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour de la notification:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de mettre à jour la notification' };
-    }
+  // Marquer toutes comme lues
+  markAllAsRead: () => {
+    set((state) => {
+      const updated = state.notifications.map(n => ({ ...n, read: true }));
+      saveToStorage(NOTIF_STORAGE_KEY, updated);
+      return { notifications: updated, unreadCount: 0 };
+    });
   },
 
   // Supprimer une notification
-  deleteNotification: async (notificationId) => {
-    try {
-      console.log('=== DELETE NOTIFICATION ===');
-      console.log('Notification ID:', notificationId);
-      
-      const config = await getAuthConfig();
-      const response = await axios.delete(
-        `${API_BASE_URL}/notifications/${notificationId}`,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la suppression de la notification:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de supprimer la notification' };
-    }
+  removeNotification: (notificationId) => {
+    set((state) => {
+      const updated = state.notifications.filter(n => n.id !== notificationId);
+      saveToStorage(NOTIF_STORAGE_KEY, updated);
+      return {
+        notifications: updated,
+        unreadCount: updated.filter(n => !n.read).length
+      };
+    });
   },
 
-  // Envoyer une notification
-  sendNotification: async (notificationId) => {
-    try {
-      console.log('=== SEND NOTIFICATION ===');
-      console.log('Notification ID:', notificationId);
-      
-      const config = await getAuthConfig();
-      const response = await axios.post(
-        `${API_BASE_URL}/notifications/${notificationId}/send`,
-        {},
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de l\'envoi de la notification:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible d\'envoyer la notification' };
-    }
+  // Vider toutes les notifications
+  clearNotifications: () => {
+    saveToStorage(NOTIF_STORAGE_KEY, []);
+    set({ notifications: [], unreadCount: 0 });
   },
 
-  // Récupérer les notifications par type
-  getNotificationsByType: async (type) => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications?type=${encodeURIComponent(type)}`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications par type:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les notifications de ce type' };
-    }
-  },
-
-  // Récupérer les notifications par statut
-  getNotificationsByStatus: async (isActive) => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications?is_active=${isActive}`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications par statut:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les notifications de ce statut' };
-    }
-  },
-
-  // Récupérer les notifications planifiées
-  getScheduledNotifications: async () => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/scheduled`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications planifiées:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les notifications planifiées' };
-    }
-  },
-
-  // Récupérer les notifications envoyées
-  getSentNotifications: async () => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/sent`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications envoyées:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les notifications envoyées' };
-    }
-  },
-
-  // Exporter les notifications
-  exportNotifications: async (filters = {}) => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/export`,
-        {
-          ...config,
-          params: filters
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de l\'export des notifications:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible d\'exporter les notifications' };
-    }
-  },
-
-  // Obtenir les statistiques des notifications
-  getNotificationStats: async () => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/stats`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des statistiques:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les statistiques' };
-    }
-  },
-
-  // Rechercher des notifications
-  searchNotifications: async (query) => {
-    try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/notifications/search?q=${encodeURIComponent(query)}`,
-        config
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la recherche des notifications:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de rechercher les notifications' };
-    }
-  },
-
-  // Envoyer une notification en masse
-  sendBulkNotifications: async (notificationIds) => {
-    try {
-      console.log('=== SEND BULK NOTIFICATIONS ===');
-      console.log('Notification IDs:', notificationIds);
-      
-      const config = await getAuthConfig();
-      const response = await axios.post(
-        `${API_BASE_URL}/notifications/bulk-send`,
-        { notification_ids: notificationIds },
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de l\'envoi massif des notifications:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible d\'envoyer les notifications en masse' };
-    }
+  // Vider l'historique d'activité
+  clearHistory: () => {
+    saveToStorage(HISTORY_STORAGE_KEY, []);
+    set({ history: [] });
   }
-};
+}));
 
-// Exporter getAuthConfig séparément pour utilisation externe
-export { getAuthConfig };
-
-export default notificationService;
+export default useNotificationStore;

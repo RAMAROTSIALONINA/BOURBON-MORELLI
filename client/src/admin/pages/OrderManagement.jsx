@@ -1,11 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  ShoppingCart, 
-  Edit, 
-  Trash2, 
-  Search, 
-  Plus,
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Trash2,
+  Search,
   Eye,
   Check,
   X,
@@ -16,18 +12,33 @@ import {
   User,
   Calendar,
   Filter,
-  Download
+  Download,
+  CheckCircle2,
+  Bell,
+  RefreshCw
 } from 'lucide-react';
 import orderService from '../../services/orderService';
+import useNotificationStore from '../../services/notificationService';
 
 const OrderManagement = () => {
-  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [lastCheck, setLastCheck] = useState(null);
+  const knownIdsRef = useRef(new Set());
+  const isInitializedRef = useRef(false);
+
+  // Utiliser le service global de notifications
+  const { addNotification } = useNotificationStore();
+
+  
+  const dismissNotification = (id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
 
   console.log('=== ORDER MANAGEMENT COMPONENT MOUNTED ===');
 
@@ -55,6 +66,12 @@ const OrderManagement = () => {
       
       console.log('Orders data:', ordersData);
       setOrders(ordersData);
+      // Seed pour le polling
+      if (!isInitializedRef.current) {
+        ordersData.forEach(o => knownIdsRef.current.add(o.id));
+        isInitializedRef.current = true;
+      }
+      setLastCheck(new Date());
     } catch (error) {
       console.error('Erreur lors du chargement des commandes:', error);
       setOrders([]);
@@ -66,6 +83,57 @@ const OrderManagement = () => {
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  // Vérifier les nouvelles commandes (polling)
+  const checkForNewOrders = useCallback(async (notify = true) => {
+    try {
+      const response = await orderService.getAllOrders();
+      let list = [];
+      if (Array.isArray(response)) list = response;
+      else if (response?.orders) list = response.orders;
+      else if (response?.data) list = response.data;
+
+      const newOnes = list.filter(o => !knownIdsRef.current.has(o.id));
+
+      // Première initialisation : seed sans notifier
+      if (!isInitializedRef.current) {
+        list.forEach(o => knownIdsRef.current.add(o.id));
+        isInitializedRef.current = true;
+        setOrders(list);
+        setLastCheck(new Date());
+        console.log('[Polling] Init avec', list.length, 'commandes');
+        return;
+      }
+
+      if (newOnes.length > 0) {
+        console.log('[Polling] 🔔', newOnes.length, 'nouvelle(s) commande(s)');
+        if (notify) {
+          newOnes.forEach(o => {
+            addNotification({
+              type: 'success',
+              category: 'Commande',
+              title: '🔔 Nouvelle commande !',
+              message: `Commande #${o.id} de ${o.customer_name || o.customer_email || 'client'} — ${parseFloat(o.total_amount || 0).toFixed(2)} EUR`,
+              link: '/admin/orders'
+            });
+          });
+        }
+        setOrders(list);
+      }
+
+      list.forEach(o => knownIdsRef.current.add(o.id));
+      setLastCheck(new Date());
+    } catch (err) {
+      console.error('[Polling] Erreur:', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Polling automatique toutes les 10 secondes
+  useEffect(() => {
+    const interval = setInterval(() => checkForNewOrders(true), 10000);
+    return () => clearInterval(interval);
+  }, [checkForNewOrders]);
 
   // Filtrer les commandes
   const filteredOrders = Array.isArray(orders) ? orders.filter(order => {
@@ -105,10 +173,50 @@ const OrderManagement = () => {
     try {
       await orderService.updateOrderStatus(orderId, { status: newStatus });
       await loadOrders();
-      alert('Statut de la commande mis à jour avec succès!');
+
+      // Messages contextuels selon le statut
+      const statusMessages = {
+        delivered: {
+          type: 'success',
+          title: '🎉 Commande terminée !',
+          message: `La commande #${orderId} a été marquée comme livrée avec succès.`
+        },
+        shipped: {
+          type: 'info',
+          title: '🚚 Commande expédiée',
+          message: `La commande #${orderId} est en cours d'expédition.`
+        },
+        processing: {
+          type: 'info',
+          title: '📦 En traitement',
+          message: `La commande #${orderId} est maintenant en traitement.`
+        },
+        cancelled: {
+          type: 'warning',
+          title: '⚠ Commande annulée',
+          message: `La commande #${orderId} a été annulée.`
+        },
+        pending: {
+          type: 'info',
+          title: '⏱ En attente',
+          message: `La commande #${orderId} est en attente.`
+        }
+      };
+
+      const n = statusMessages[newStatus] || {
+        type: 'info',
+        title: 'Statut mis à jour',
+        message: `Commande #${orderId} → ${newStatus}`
+      };
+      addNotification({ ...n, category: 'Commande', link: '/admin/orders' });
     } catch (error) {
       console.error('Erreur lors de la mise à jour du statut:', error);
-      alert('Erreur lors de la mise à jour du statut');
+      addNotification({
+        type: 'error',
+        category: 'Erreur',
+        title: 'Erreur',
+        message: 'Impossible de mettre à jour le statut de la commande.'
+      });
     }
   };
 
@@ -121,10 +229,20 @@ const OrderManagement = () => {
     try {
       await orderService.deleteOrder(orderId);
       await loadOrders();
-      alert('Commande supprimée avec succès!');
+      addNotification({
+        type: 'success',
+        category: 'Commande',
+        title: '🗑 Commande supprimée',
+        message: `La commande #${orderId} a été supprimée.`
+      });
     } catch (error) {
       console.error('Erreur lors de la suppression de la commande:', error);
-      alert('Erreur lors de la suppression de la commande');
+      addNotification({
+        type: 'error',
+        category: 'Erreur',
+        title: 'Erreur',
+        message: 'Impossible de supprimer la commande.'
+      });
     }
   };
 
@@ -147,13 +265,80 @@ const OrderManagement = () => {
     });
   };
 
+  // Styles des toasts selon le type
+  const toastStyles = {
+    success: { bg: 'bg-green-50', border: 'border-green-400', icon: 'text-green-600', title: 'text-green-900', text: 'text-green-800', bar: 'bg-green-500' },
+    info: { bg: 'bg-blue-50', border: 'border-blue-400', icon: 'text-blue-600', title: 'text-blue-900', text: 'text-blue-800', bar: 'bg-blue-500' },
+    warning: { bg: 'bg-amber-50', border: 'border-amber-400', icon: 'text-amber-600', title: 'text-amber-900', text: 'text-amber-800', bar: 'bg-amber-500' },
+    error: { bg: 'bg-red-50', border: 'border-red-400', icon: 'text-red-600', title: 'text-red-900', text: 'text-red-800', bar: 'bg-red-500' }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Toasts de notifications */}
+      <div className="fixed top-6 right-6 z-[100] space-y-3 w-full max-w-sm pointer-events-none">
+        {notifications.map((n) => {
+          const s = toastStyles[n.type] || toastStyles.info;
+          const Icon = n.type === 'success' ? CheckCircle2 : Bell;
+          return (
+            <div
+              key={n.id}
+              className={`pointer-events-auto ${s.bg} border-l-4 ${s.border} rounded-lg shadow-lg overflow-hidden animate-slide-up`}
+            >
+              <div className="flex items-start p-4 gap-3">
+                <div className={`${s.icon} flex-shrink-0 mt-0.5`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold ${s.title}`}>{n.title}</p>
+                  <p className={`text-sm mt-0.5 ${s.text}`}>{n.message}</p>
+                </div>
+                <button
+                  onClick={() => dismissNotification(n.id)}
+                  className={`${s.icon} hover:opacity-70 flex-shrink-0`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className={`h-1 ${s.bar} animate-[shrink_5s_linear_forwards]`} style={{ animation: 'shrink 5s linear forwards' }} />
+            </div>
+          );
+        })}
+      </div>
+      <style>{`
+        @keyframes shrink {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      `}</style>
+
       {/* En-tête */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-neutral-900">Gestion des commandes</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-neutral-900">Gestion des commandes</h2>
+          <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            Vérification auto (10s)
+            {lastCheck && (
+              <span className="text-neutral-400">
+                · Dernière : {lastCheck.toLocaleTimeString('fr-FR')}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="flex space-x-3">
-          <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center">
+          <button
+            onClick={() => { isInitializedRef.current = false; loadOrders(); }}
+            className="bg-white border border-neutral-200 text-neutral-700 px-4 py-2 rounded-lg hover:bg-neutral-50 transition-colors flex items-center"
+            title="Rafraîchir la liste"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Rafraîchir
+          </button>
+          <button className="bg-neutral-900 text-white px-4 py-2 rounded-lg hover:bg-neutral-800 transition-colors flex items-center">
             <Download className="w-4 h-4 mr-2" />
             Exporter
           </button>

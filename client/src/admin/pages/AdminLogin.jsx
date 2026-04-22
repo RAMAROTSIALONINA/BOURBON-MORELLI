@@ -82,7 +82,7 @@ const AdminLogin = () => {
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   className="input-luxury pl-10"
-                  placeholder="admin@bourbonmorelli.com"
+                  placeholder="Entrez votre email"
                   required
                 />
               </div>
@@ -146,17 +146,6 @@ const AdminLogin = () => {
               )}
             </button>
           </form>
-
-          {/* Informations de démo */}
-          <div className="mt-6 p-4 bg-neutral-50 rounded-lg">
-            <p className="text-sm text-neutral-600 font-medium mb-2">
-              Accès de démonstration :
-            </p>
-            <div className="text-xs text-neutral-500 space-y-1">
-              <p>Email: <span className="font-mono">admin@bourbonmorelli.com</span></p>
-              <p>Mot de passe: <span className="font-mono">admin123</span></p>
-            </div>
-          </div>
 
           {/* Lien vers le site */}
           <div className="mt-6 text-center">

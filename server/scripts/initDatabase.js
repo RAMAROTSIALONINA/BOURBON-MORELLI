@@ -199,12 +199,6 @@ async function initDatabase() {
     console.log('\n' + '='.repeat(50));
     console.log('BASE DE DONNÉES INITIALISÉE AVEC SUCCÈS!');
     console.log('='.repeat(50));
-    console.log('\nIdentifiants de connexion:');
-    console.log('Admin: admin@bourbonmorelli.com / admin123');
-    console.log('Utilisateurs de test:');
-    console.log('  - jean.dupont@email.com / password123');
-    console.log('  - marie.martin@email.com / password123');
-    console.log('  - pierre.bernard@email.com / password123');
     console.log('\nProduits BOURBON MORELLI créés:');
     console.log('  - Nappe de Table Luxe: 89.99');
     console.log('  - T-shirt Premium: 39.99');

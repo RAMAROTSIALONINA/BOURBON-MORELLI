@@ -1,13 +1,12 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Users, 
-  ShoppingBag, 
-  Package, 
+import {
+  Users,
+  ShoppingBag,
+  Package,
   Eye,
   Edit,
   Trash2,
-  Plus,
   DollarSign
 } from 'lucide-react';
 import ProductManagement from './ProductManagement';
@@ -15,6 +14,11 @@ import OrderManagement from './OrderManagement';
 import CustomerManagement from './CustomerManagement';
 import PaymentManagement from './PaymentManagement';
 import NotificationManagement from './NotificationManagement';
+import CategoryManagement from './CategoryManagement';
+import ActivityHistory from './ActivityHistory';
+import DashboardOverview from './DashboardOverview';
+import Analytics from './Analytics';
+import Reports from './Reports';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -76,6 +80,9 @@ const AdminDashboard = () => {
     else if (path.includes('/customers')) section = 'customers';
     else if (path.includes('/payments')) section = 'payments';
     else if (path.includes('/notifications')) section = 'notifications';
+    else if (path.includes('/history')) section = 'history';
+    else if (path.includes('/analytics')) section = 'analytics';
+    else if (path.includes('/reports')) section = 'reports';
     else if (path.includes('/settings')) section = 'settings';
     
     console.log('Determined section:', section);
@@ -89,6 +96,9 @@ const AdminDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
+        return <DashboardOverview />;
+
+      case 'overview_old_DISABLED':
         return (
           <div className="space-y-6">
             {/* Stats Grid */}
@@ -278,14 +288,19 @@ const AdminDashboard = () => {
       case 'notifications':
         return <NotificationManagement />;
 
+      case 'history':
+        return <ActivityHistory />;
+
+      case 'analytics':
+        return <Analytics />;
+
+      case 'reports':
+        return <Reports />;
+
       case 'settings':
         return (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-neutral-900">Paramètres</h2>
-            
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-              <p className="text-neutral-600">Paramètres de l'application...</p>
-            </div>
+          <div className="space-y-8">
+            <CategoryManagement />
           </div>
         );
 
@@ -308,6 +323,9 @@ const AdminDashboard = () => {
           {activeSection === 'products' && 'Produits'}
           {activeSection === 'customers' && 'Clients'}
           {activeSection === 'payments' && 'Paiements'}
+          {activeSection === 'analytics' && 'Analytics'}
+          {activeSection === 'reports' && 'Rapports'}
+          {activeSection === 'history' && 'Historique'}
           {activeSection === 'settings' && 'Paramètres'}
         </h1>
         <p className="text-gray-600 text-sm mt-1">

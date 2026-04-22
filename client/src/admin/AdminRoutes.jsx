@@ -22,6 +22,7 @@ const AdminRoutes = () => {
       <Route path="/analytics" element={<AdminDashboard />} />
       <Route path="/reports" element={<AdminDashboard />} />
       <Route path="/settings" element={<AdminDashboard />} />
+      <Route path="/history" element={<AdminDashboard />} />
       <Route path="/search" element={<AdminDashboard />} />
       <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>

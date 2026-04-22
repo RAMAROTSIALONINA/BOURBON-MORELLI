@@ -29,10 +29,10 @@ async function setupDatabase() {
     
     await connection.end();
     
-    console.log('✅ Base de données créée avec succès!');
-    console.log('\n🎯 IDENTIFIANTS DE CONNEXION:');
-    console.log('👤 Admin: admin@bourbonmorelli.com / admin123');
-    console.log('👤 Utilisateurs: jean.dupont@email.com / password123');
+    console.log('Base de données créée avec succès!');
+    console.log('\nDémo BOURBON MORELLI prête !');
+    console.log('API: http://localhost:5003');
+    console.log('Admin: http://localhost:3000/admin/login');
     console.log('\n🛍️ PRODUITS BOURBON MORELLI DISPONIBLES:');
     console.log('   - Nappe de Table Luxe: 89.99€');
     console.log('   - T-shirt Premium: 39.99€');

@@ -2,55 +2,61 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight } from 'lucide-react';
 
+const BACKEND_URL = 'http://localhost:5003';
+
+const resolveImageUrl = (url) => {
+  if (!url) return '/images/BOURBON MORELLI.png';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+    return `${BACKEND_URL}/${url.replace(/^\//, '')}`;
+  }
+  return url;
+};
+
 const Cart = ({ isOpen, onClose, onCheckout }) => {
   const [cartItems, setCartItems] = useState([]);
 
-  // Nettoyage immédiat et forcé au montage du composant
+  // Charger le panier depuis localStorage au montage
   useEffect(() => {
-    console.log('🧹 NETTOYAGE FORCÉ DU PANIER - VERSION FINALE');
-    console.log('🔍 Structure attendue: {id, name, price, image_url, images[], quantity, category}');
-    
-    // Créer un panier propre avec les produits BOURBON MORELLI
-    const cleanCart = [
-      {
-        id: 1,
-        name: 'Nappe de Table Luxe',
-        price: 89.99,
-        image_url: '/images/nappe-table.png',
-        images: ['/images/nappe-table.png'],
-        quantity: 1,
-        category: { name: 'Nappes' }
-      },
-      {
-        id: 2,
-        name: 'T-shirt Premium',
-        price: 39.99,
-        image_url: '/images/T-shirts1.PNG',
-        images: ['/images/T-shirts1.PNG'],
-        quantity: 1,
-        category: { name: 'T-Shirts' }
+    // Nettoyage unique des anciennes données de démo (Nappe + T-shirt forcés)
+    const CART_CLEANUP_FLAG = 'cart_demo_cleaned_v1';
+    if (!localStorage.getItem(CART_CLEANUP_FLAG)) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('cart') || '[]');
+        const isDemoCart = Array.isArray(stored) && stored.some(
+          (it) => it?.name === 'Nappe de Table Luxe' || it?.name === 'T-shirt Premium'
+        );
+        if (isDemoCart) {
+          localStorage.removeItem('cart');
+          console.log('🧹 Anciennes données de démo supprimées du panier');
+        }
+      } catch (e) { /* ignore */ }
+      localStorage.setItem(CART_CLEANUP_FLAG, '1');
+    }
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('cart') || '[]');
+      if (Array.isArray(stored)) {
+        setCartItems(stored);
       }
-    ];
-    
-    console.log('📋 Panier créé:', cleanCart);
-    console.log('🔍 Vérification structure:', cleanCart[0]);
-    console.log('🔍 Types de données:', {
-      price: typeof cleanCart[0].price,
-      quantity: typeof cleanCart[0].quantity,
-      image_url: typeof cleanCart[0].image_url
-    });
-    
-    setCartItems(cleanCart);
-    localStorage.setItem('cart', JSON.stringify(cleanCart));
-    console.log('✅ Panier propre créé et sauvegardé');
+    } catch (e) {
+      setCartItems([]);
+    }
   }, []);
 
+  // Recharger à chaque ouverture (au cas où ajouté depuis une autre page)
   useEffect(() => {
     if (isOpen) {
-      // Le panier est déjà chargé au montage, plus besoin de recharger
-      console.log('🛒 Panier ouvert:', cartItems);
+      try {
+        const stored = JSON.parse(localStorage.getItem('cart') || '[]');
+        if (Array.isArray(stored)) {
+          setCartItems(stored);
+        }
+      } catch (e) {
+        setCartItems([]);
+      }
     }
-  }, [isOpen, cartItems]);
+  }, [isOpen]);
 
   const updateQuantity = (itemId, newQuantity) => {
     if (newQuantity < 1) return;
@@ -176,7 +182,7 @@ const Cart = ({ isOpen, onClose, onCheckout }) => {
                     {/* Product image */}
                     <div className="flex-shrink-0">
                       <img
-                        src={item.image_url || item.images?.[0] || '/images/BOURBON MORELLI.png'}
+                        src={resolveImageUrl(item.image_url || item.images?.[0] || item.image)}
                         alt={item.name}
                         className="w-20 h-20 object-cover rounded-lg"
                         onLoad={(e) => {

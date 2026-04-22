@@ -9,7 +9,6 @@ import {
   Eye,
   Mail,
   Phone,
-  MapPin,
   Calendar,
   Filter,
   Download,
@@ -18,9 +17,11 @@ import {
   X
 } from 'lucide-react';
 import customerService from '../../services/customerService';
+import useNotificationStore from '../../services/notificationService';
 
 const CustomerManagement = () => {
   const navigate = useNavigate();
+  const addNotification = useNotificationStore(s => s.addNotification);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -129,6 +130,12 @@ const CustomerManagement = () => {
       await customerService.updateCustomer(selectedCustomer.id, customerData);
       await loadCustomers();
       setShowEditModal(false);
+      addNotification({
+        type: 'info',
+        category: 'Client',
+        title: 'Client modifié',
+        message: `${customerData.first_name} ${customerData.last_name} (${customerData.email}) mis à jour`
+      });
       setSelectedCustomer(null);
       resetForm();
       alert('Client modifié avec succès!');
@@ -145,12 +152,26 @@ const CustomerManagement = () => {
     }
 
     try {
-      await customerService.deleteCustomer(customerId);
+      const cust = customers.find(c => c.id === customerId);
+      // Message spécifique pour les invités (suppression = purge commandes)
+      if (String(customerId).startsWith('g-')) {
+        if (!window.confirm(
+          `Cet email invité (${cust?.email}) est lié à ses commandes.\n` +
+          `Continuer supprimera TOUTES ses commandes de la base. Êtes-vous sûr ?`
+        )) return;
+      }
+      await customerService.deleteCustomer(customerId, cust?.email);
       await loadCustomers();
+      addNotification({
+        type: 'warning',
+        category: 'Client',
+        title: 'Client supprimé',
+        message: `${cust?.first_name || ''} ${cust?.last_name || ''} (${cust?.email || '#' + customerId}) supprimé`
+      });
       alert('Client supprimé avec succès!');
     } catch (error) {
       console.error('Erreur lors de la suppression du client:', error);
-      alert('Erreur lors de la suppression du client');
+      alert(error?.message || 'Erreur lors de la suppression du client');
     }
   };
 
@@ -225,6 +246,32 @@ const CustomerManagement = () => {
         </div>
       </div>
 
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-neutral-200">
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">Total clients</p>
+          <p className="text-2xl font-bold text-neutral-900 mt-1">{customers.length}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-neutral-200">
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">Inscrits</p>
+          <p className="text-2xl font-bold text-green-600 mt-1">
+            {customers.filter(c => c.type === 'registered').length}
+          </p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-neutral-200">
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">Invités</p>
+          <p className="text-2xl font-bold text-amber-600 mt-1">
+            {customers.filter(c => c.type === 'guest').length}
+          </p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-neutral-200">
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">CA total</p>
+          <p className="text-2xl font-bold text-neutral-900 mt-1">
+            {customers.reduce((s, c) => s + (parseFloat(c.total_spent) || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+          </p>
+        </div>
+      </div>
+
       {/* Filtres */}
       <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -266,13 +313,16 @@ const CustomerManagement = () => {
                   Contact
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
-                  Localisation
+                  Commandes
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
-                  Date d'inscription
+                  Total dépensé
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
-                  Statut
+                  Dernière commande
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
+                  Type
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
                   Actions
@@ -282,13 +332,13 @@ const CustomerManagement = () => {
             <tbody className="bg-white divide-y divide-neutral-200">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-4 text-center text-neutral-500">
+                  <td colSpan="7" className="px-6 py-4 text-center text-neutral-500">
                     Chargement...
                   </td>
                 </tr>
               ) : filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-4 text-center text-neutral-500">
+                  <td colSpan="7" className="px-6 py-4 text-center text-neutral-500">
                     Aucun client trouvé
                   </td>
                 </tr>
@@ -327,22 +377,34 @@ const CustomerManagement = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-semibold text-neutral-900">
+                        {customer.orders_count || 0}
+                      </div>
+                      <div className="text-xs text-neutral-500">
+                        {(customer.orders_count || 0) > 1 ? 'commandes' : 'commande'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-semibold text-green-600">
+                        {(parseFloat(customer.total_spent) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center text-sm text-neutral-600">
-                        <MapPin className="w-3 h-3 mr-1" />
-                        {customer.city && customer.country 
-                          ? `${customer.city}, ${customer.country}`
-                          : customer.city || customer.country || 'N/A'
-                        }
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-neutral-900">
                         <Calendar className="w-3 h-3 mr-1" />
-                        {formatDate(customer.created_at)}
+                        {formatDate(customer.last_order_date || customer.created_at)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(customer.status)}
+                      {customer.type === 'guest' ? (
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
+                          Invité
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                          Inscrit
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center space-x-2">

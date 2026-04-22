@@ -11,7 +11,22 @@ const Header = ({ cartCount: propCartCount = 0 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [categories, setCategories] = useState([]);
   const location = useLocation();
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const res = await fetch('http://localhost:5003/api/categories');
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.categories || data.data || []);
+        setCategories(list.filter(c => !c.parent_id));
+      } catch (err) {
+        console.error('Erreur chargement catégories header:', err);
+      }
+    };
+    loadCategories();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -34,15 +49,17 @@ const Header = ({ cartCount: propCartCount = 0 }) => {
 
   const navigation = [
     { name: 'Accueil', href: '/' },
-    { 
-      name: 'Collections', 
+    {
+      name: 'Collections',
       href: '/collections',
-      submenu: [
-        { name: 'Nappes', href: '/collections/nappes' },
-        { name: 'T-Shirts', href: '/collections/t-shirts' },
-        { name: 'Polos', href: '/collections/polos' },
-        { name: 'Pantalons', href: '/collections/pantalons' }
-      ]
+      submenu: categories.length > 0
+        ? categories.map(c => ({ name: c.name, href: `/collections/${c.slug}` }))
+        : [
+            { name: 'Nappes', href: '/collections/nappes' },
+            { name: 'T-Shirts', href: '/collections/t-shirts' },
+            { name: 'Polos', href: '/collections/polos' },
+            { name: 'Pantalons', href: '/collections/pantalons' }
+          ]
     },
     { name: 'Nouveautés', href: '/new' },
     { name: 'À propos', href: '/about', nowrap: true },
@@ -86,15 +103,15 @@ const Header = ({ cartCount: propCartCount = 0 }) => {
         {/* Main header */}
         <div className="flex items-center justify-between h-28 lg:h-32">
           {/* Logo - Desktop */}
-          <div className="hidden lg:flex items-center space-x-4 pl-6">
-            <Link to="/" className="flex items-center">
+          <div className="hidden lg:flex items-center space-x-4 pl-6 h-full">
+            <Link to="/" className="flex items-center justify-center h-full">
               <Logo size="xxlarge" />
             </Link>
           </div>
 
           {/* Logo - Mobile/Tablet */}
-          <div className="flex lg:hidden items-center space-x-3 pl-4">
-            <Link to="/" className="flex items-center">
+          <div className="flex lg:hidden items-center space-x-3 pl-4 h-full">
+            <Link to="/" className="flex items-center justify-center h-full">
               <Logo size="xlarge" />
             </Link>
           </div>

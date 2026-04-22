@@ -20,20 +20,6 @@ node setupDatabase.js
 mysql -u root -p < database_complete.sql
 ```
 
-## 🔑 Identifiants de connexion
-
-### 👤 Administrateur
-- **Email**: admin@bourbonmorelli.com
-- **Mot de passe**: admin123
-- **Accès**: `/admin/dashboard`
-
-### 👤 Utilisateurs de test
-- **Email**: jean.dupont@email.com
-- **Mot de passe**: password123
-- **Email**: marie.martin@email.com
-- **Mot de passe**: password123
-- **Email**: pierre.bernard@email.com
-- **Mot de passe**: password123
 
 ## 🛍️ Produits disponibles
 

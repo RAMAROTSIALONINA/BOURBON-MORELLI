@@ -10,11 +10,17 @@ const { testConnection } = require('./config/database');
 // Import routes
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products_simple');
+const productPublicRoutes = require('./routes/products_public');
 const categoryRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const userRoutes = require('./routes/users');
+const customerRoutes = require('./routes/customers');
 const paymentRoutes = require('./routes/payments');
+const uploadRoutes = require('./routes/upload');
+const adminStatsRoutes = require('./routes/admin_stats');
+const adminAnalyticsRoutes = require('./routes/admin_analytics');
+const adminReportsRoutes = require('./routes/admin_reports');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -33,6 +39,9 @@ app.use(helmet({
       scriptSrc: ["'self'"],
     },
   },
+  // ✅ Autoriser le chargement cross-origin des fichiers statiques (images uploadées)
+  // Sans ça, <img src="http://localhost:5003/uploads/..."/> est bloqué depuis localhost:3000
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
 app.use(compression());
@@ -60,8 +69,13 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static files for uploads
-app.use('/uploads', express.static('uploads'));
+// Static files for uploads avec CORS
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static('uploads'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -76,11 +90,17 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/public/products', productPublicRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/customers', customerRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/admin', adminStatsRoutes);
+app.use('/api/admin', adminAnalyticsRoutes);
+app.use('/api/admin/reports', adminReportsRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -7,9 +7,10 @@ module.exports = function(app) {
     secure: false,
   });
 
-  // Proxy toutes les requêtes API vers le backend
+  // Forwarder toutes les requêtes API vers le backend
   app.use('/api', proxy);
-  
-  // Ne pas proxy les fichiers statiques (images, css, js)
-  // Ils sont servis par React Development Server
+
+  // ✅ Forwarder les fichiers uploadés (images produits) vers le backend
+  // Sans ça, <img src="/uploads/..."/> retourne 404 depuis le dev server React
+  app.use('/uploads', proxy);
 };

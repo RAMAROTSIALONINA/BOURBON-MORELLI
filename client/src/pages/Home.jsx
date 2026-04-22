@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductGrid from '../components/ProductGrid';
 import { ArrowRight, Star, Truck, Shield, Sparkles } from 'lucide-react';
+import productServicePublic from '../services/productServicePublic';
+
+// Base URL du backend (pour servir les images en bypassant le proxy React)
+const BACKEND_URL = 'http://localhost:5003';
+
+// Transforme "/uploads/products/xxx.png" → "http://localhost:5003/uploads/products/xxx.png"
+// Laisse inchangé les URLs absolues (http://...) et les chemins /images/... du seed
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
 
 const Home = () => {
   const [featuredProducts, setFeaturedProducts] = useState([]);
@@ -9,69 +22,129 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simuler le chargement des produits
-    setTimeout(() => {
-      const mockProducts = [
-        {
-          id: 1,
-          name: 'Nappe de Table Luxe',
-          slug: 'nappe-de-table-luxe',
-          price: 89.99,
-          compare_price: 119.99,
-          description: 'Une nappe de table élégante en coton premium, parfaite pour les occasions spéciales.',
-          category: { name: 'Nappes' },
-          images: ['/images/Nape%20de%20table.PNG', '/images/Nape%20de%20table1.PNG', '/images/Nape%20de%20table2.PNG'],
-          featured: true,
-          rating: 5,
-          reviews_count: 12,
-          inventory_quantity: 5
-        },
-        {
-          id: 2,
-          name: 'T-shirt Premium',
-          slug: 'tshirt-premium',
-          price: 39.99,
-          description: 'T-shirt en coton bio de haute qualité, confortable et durable.',
-          category: { name: 'T-Shirts' },
-          images: ['/images/T-shirts1.PNG', '/images/T-shirts2.PNG', '/images/T-shirts3.PNG'],
-          featured: true,
-          rating: 4,
-          reviews_count: 8,
-          inventory_quantity: 3
-        },
-        {
-          id: 3,
-          name: 'Polo Classique',
-          slug: 'polo-classique',
-          price: 49.99,
-          description: 'Polo en piqué de coton avec col traditionnel, idéal pour le sport et le casual.',
-          category: { name: 'Polos' },
-          images: ['/images/Polos.PNG', '/images/Polos%201.PNG', '/images/Polos%202.PNG'],
-          featured: false,
-          rating: 4,
-          reviews_count: 6,
-          inventory_quantity: 15
-        },
-        {
-          id: 4,
-          name: 'Pantalon Chic',
-          slug: 'pantalon-chic',
-          price: 79.99,
-          description: 'Pantalon élégant en laine mélangée, parfait pour le bureau et les événements.',
-          category: { name: 'Pantalons' },
-          images: ['/images/Pantalons.PNG', '/images/Pantalons%201.PNG', '/images/Pantalons%202.PNG'],
-          featured: true,
-          rating: 5,
-          reviews_count: 10,
-          inventory_quantity: 8,
-          created_at: new Date(Date.now() - 86400000).toISOString() // Hier
-        }
-      ];
-
-      setFeaturedProducts(mockProducts.filter(p => p.featured));
-      // setNewProducts(mockProducts.filter(p => p.is_new));
-      setLoading(false);
-    }, 1000);
+    const loadProducts = async () => {
+      setLoading(true);
+      
+      try {
+        console.log('Chargement des produits depuis l\'API pour la page d\'accueil');
+        
+        // Récupérer tous les produits depuis l'API
+        const productsData = await productServicePublic.getAllProducts();
+        
+        // Formater les produits pour le composant ProductGrid
+        const formattedProducts = Array.isArray(productsData) ? productsData.map(product => {
+          const resolvedImages = product.images && product.images.length > 0 
+            ? product.images.map(u => resolveImageUrl(u)) 
+            : ['/images/placeholder-product.jpg'];
+          
+          console.log(`=== HOME DEBUG - Produit: ${product.name} ===`);
+          console.log('Images brutes API:', product.images);
+          console.log('Images résolues:', resolvedImages);
+          console.log('Nombre d\'images:', resolvedImages.length);
+          
+          return {
+            id: product.id,
+            name: product.name,
+            slug: product.name.toLowerCase().replace(/\s+/g, '-'),
+            price: product.price,
+            compare_price: product.compare_price || null,
+            description: product.description,
+            category: { name: typeof product.category === 'string' ? product.category : product.category?.name || 'Non catégorisé' },
+            images: resolvedImages,
+            featured: product.status === 'active',
+            rating: product.rating || 4,
+            reviews_count: product.reviews_count || 0,
+            inventory_quantity: product.stock || 0,
+            stock: product.stock || 0,
+            reviews: product.reviews_count || 0
+          };
+        }) : [];
+        
+        // Prendre seulement les produits actifs (featured) pour la section "featured"
+        const activeProducts = formattedProducts.filter(product => product.featured);
+        setFeaturedProducts(activeProducts);
+        
+        console.log('Produits chargés pour l\'accueil:', activeProducts.length, 'produits actifs');
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des produits pour l\'accueil:', error);
+        
+        // En cas d'erreur, utiliser les données mockées comme fallback
+        console.log('Fallback vers les données mockées pour l\'accueil');
+        
+        const mockProducts = [
+          {
+            id: 1,
+            name: 'Nappe de Table Luxe',
+            slug: 'nappe-de-table-luxe',
+            price: 89.99,
+            compare_price: 119.99,
+            description: 'Une nappe de table élégante en coton premium, parfaite pour les occasions spéciales.',
+            category: { name: 'Nappes' },
+            images: ['/images/Nape%20de%20table.PNG', '/images/Nape%20de%20table1.PNG', '/images/Nape%20de%20table2.PNG'],
+            featured: true,
+            rating: 5,
+            reviews_count: 12,
+            inventory_quantity: 5,
+            stock: 5,
+            reviews: 12
+          },
+          {
+            id: 2,
+            name: 'T-shirt Premium',
+            slug: 'tshirt-premium',
+            price: 39.99,
+            description: 'T-shirt en coton bio de haute qualité, confortable et durable.',
+            category: { name: 'T-Shirts' },
+            images: ['/images/T-shirts1.PNG', '/images/T-shirts2.PNG', '/images/T-shirts3.PNG'],
+            featured: true,
+            rating: 4,
+            reviews_count: 8,
+            inventory_quantity: 3,
+            stock: 3,
+            reviews: 8
+          },
+          {
+            id: 3,
+            name: 'Polo Classique',
+            slug: 'polo-classique',
+            price: 49.99,
+            description: 'Polo en piqué de coton avec col traditionnel, idéal pour le sport et le casual.',
+            category: { name: 'Polos' },
+            images: ['/images/Polos.PNG', '/images/Polos%201.PNG', '/images/Polos%202.PNG'],
+            featured: false,
+            rating: 4,
+            reviews_count: 6,
+            inventory_quantity: 15,
+            stock: 15,
+            reviews: 6
+          },
+          {
+            id: 4,
+            name: 'Pantalon Chic',
+            slug: 'pantalon-chic',
+            price: 79.99,
+            description: 'Pantalon élégant en laine mélangée, parfait pour le bureau et les soirées.',
+            category: { name: 'Pantalons' },
+            images: ['/images/Pantalons.PNG', '/images/Pantalons%201.PNG', '/images/Pantalons%202.PNG'],
+            featured: false,
+            rating: 4,
+            reviews_count: 10,
+            inventory_quantity: 8,
+            stock: 8,
+            reviews: 10
+          }
+        ];
+        
+        // Prendre seulement les produits featured pour la section "featured"
+        setFeaturedProducts(mockProducts.filter(product => product.featured));
+        
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadProducts();
   }, []);
 
   const handleAddToCart = (product) => {

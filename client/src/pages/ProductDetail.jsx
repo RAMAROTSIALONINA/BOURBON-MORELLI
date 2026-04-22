@@ -11,24 +11,92 @@ import {
   RefreshCw,
   Share2
 } from 'lucide-react';
+import ImagePlaceholder from '../components/ImagePlaceholder';
 
-const ProductDetail = () => {
+// Base URL du backend (pour servir les images en bypassant le proxy React)
+const BACKEND_URL = 'http://localhost:5003';
+
+// Transforme "/uploads/products/xxx.png" → "http://localhost:5003/uploads/products/xxx.png"
+// Laisse inchangé les URLs absolues (http://...) et les chemins /images/... du seed
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
+
+const ProductDetail = ({ onAddToCart }) => {
   const { slug } = useParams();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [quantity, setQuantity] = useState(1);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isInWishlist, setIsInWishlist] = useState(false);
+
+  // Fonction pour cliquer sur une image et la mettre en grand
+  const handleImageClick = (index) => {
+    console.log(`Clic sur image ${index + 1}`);
+    setSelectedImageIndex(index);
+  };
 
   useEffect(() => {
     console.log('ProductDetail useEffect - slug:', slug);
     
-    // Utiliser les données mockées directement (pas d'API disponible)
+    // Utiliser l'API publique pour récupérer le produit
     const fetchProduct = async () => {
       try {
         setLoading(true);
-        console.log('Fetching product from mock data for slug:', slug);
+        console.log('Fetching product from API for slug:', slug);
+        
+        // Essayer d'abord l'API publique
+        try {
+          const response = await fetch(`http://localhost:5003/api/public/products`);
+          const data = await response.json();
+          
+          if (data.success && data.products) {
+            const foundProduct = data.products.find(p => p.slug === slug);
+            console.log('API - Produit trouvé:', foundProduct?.name || 'Non trouvé');
+            
+            if (foundProduct) {
+              // Transformer les données pour correspondre au format attendu
+              const transformedProduct = {
+                ...foundProduct,
+                images: foundProduct.images || ['/images/BOURBON MORELLI.png'],
+                inventory_quantity: foundProduct.stock || 0,
+                category_name: typeof foundProduct.category === 'string' ? foundProduct.category : foundProduct.category?.name,
+                compare_price: foundProduct.compare_price || null,
+                variants: [],
+                similar_products: []
+              };
+              
+              console.log('=== PRODUCT DETAIL DEBUG ===');
+              console.log('Produit trouvé:', foundProduct.name);
+              console.log('Images brutes de l\'API:', foundProduct.images);
+              console.log('Type d\'images:', typeof foundProduct.images);
+              console.log('Est un tableau:', Array.isArray(foundProduct.images));
+              console.log('Images transformées:', transformedProduct.images);
+              console.log('Nombre d\'images:', transformedProduct.images.length);
+              
+              // Vérifier si les images sont bien un tableau
+              if (Array.isArray(foundProduct.images)) {
+                console.log('✅ Images est bien un tableau');
+                foundProduct.images.forEach((img, idx) => {
+                  console.log(`  Image API ${idx + 1}: "${img}" (type: ${typeof img})`);
+                });
+              } else {
+                console.log('❌ Images n\'est PAS un tableau !');
+                console.log('Contenu:', foundProduct.images);
+              }
+              
+              setProduct(transformedProduct);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API non disponible, utilisation des données mockées:', apiError.message);
+        }
         
         // Fallback vers les données mockées si l'API échoue
         const mockProducts = [
@@ -254,8 +322,18 @@ const ProductDetail = () => {
   }, [slug]);
 
   const handleAddToCart = () => {
-    console.log('Ajouté au panier:', product.name, 'Quantité:', quantity);
-    // Logique d'ajout au panier ici
+    if (!product) return;
+    if (currentStock === 0) return;
+
+    // Ajouter la quantité demandée en appelant le handler parent
+    // (qui utilise cartService.addToCart + met à jour le compteur du header)
+    for (let i = 0; i < quantity; i++) {
+      onAddToCart?.(product);
+    }
+    console.log(`✅ "${product.name}" ajouté au panier (x${quantity})`);
+
+    // Feedback utilisateur
+    alert(`${product.name} ajouté au panier (quantité : ${quantity})`);
   };
 
   const handleAddToWishlist = () => {
@@ -317,44 +395,66 @@ const ProductDetail = () => {
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          {/* Images */}
+          {/* Images - Toutes les images en grille */}
           <div className="space-y-4">
-            {/* Image principale */}
-            <div className="relative aspect-square bg-neutral-100 rounded-lg overflow-hidden">
-              <img
-                src={product.images[selectedImage] || '/images/BOURBON MORELLI.png'}
-                alt={product.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.src = '/images/BOURBON MORELLI.png';
-                }}
-              />
-              
-              {discountPercentage && (
-                <div className="absolute top-4 left-4 bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold">
-                  -{discountPercentage}%
+            <div className="space-y-4">
+              {product.images && product.images.length > 0 ? (
+                <>
+                  {/* Image principale en grand (celle qui est sélectionnée) */}
+                  <div className="relative group rounded-lg overflow-hidden bg-neutral-50 aspect-square">
+                    <img
+                      src={resolveImageUrl(product.images[selectedImageIndex])}
+                      alt={`${product.name} - vue ${selectedImageIndex + 1}`}
+                      className="block w-full h-full object-contain"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = '/images/BOURBON MORELLI.png';
+                      }}
+                    />
+                  </div>
+
+                  {/* Toutes les images en vignettes (y compris l'image principale) */}
+                  <div className="flex flex-wrap gap-2">
+                    {product.images.map((image, index) => (
+                      <div key={index} className={`relative group rounded-lg overflow-hidden bg-neutral-50 w-20 h-20 flex-shrink-0 cursor-pointer transition-all ${
+                        selectedImageIndex === index
+                          ? 'ring-2 ring-primary-500'
+                          : 'hover:opacity-80 opacity-90'
+                      }`}>
+                        <img
+                          src={resolveImageUrl(image)}
+                          alt={`${product.name} - vue ${index + 1}`}
+                          className="block w-full h-full object-contain"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = '/images/BOURBON MORELLI.png';
+                          }}
+                          onClick={() => handleImageClick(index)}
+                        />
+                        
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="col-span-2">
+                  <ImagePlaceholder 
+                    className="w-full h-64" 
+                    alt={product.name}
+                    showLogo={false}
+                  />
                 </div>
               )}
             </div>
-
-            {/* Thumbnails */}
-            <div className="flex space-x-2 overflow-x-auto">
-              {product.images.map((image, index) => (
-                <button
-                  key={index}
-                  onClick={() => setSelectedImage(index)}
-                  className={`flex-shrink-0 w-20 h-20 border-2 rounded-lg overflow-hidden transition-colors ${
-                    selectedImage === index ? 'border-primary-500' : 'border-neutral-200'
-                  }`}
-                >
-                  <img
-                    src={image}
-                    alt={`${product.name} ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
+            
+            {/* Badge de réduction sur la première image */}
+            {discountPercentage && product.images && product.images.length > 0 && (
+              <div className="text-sm text-neutral-600 text-center">
+                <span className="inline-flex items-center bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold">
+                  -{discountPercentage}% sur ce produit
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Informations produit */}

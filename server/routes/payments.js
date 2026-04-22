@@ -476,4 +476,163 @@ router.post('/stripe/webhook', async (req, res) => {
   }
 });
 
+// ============ ROUTES ADMIN ============
+
+const authenticateAdmin = (req, res, next) => {
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token requis' });
+  }
+  try {
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), process.env.JWT_SECRET || 'your-secret-key');
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Accès admin requis' });
+    req.user = decoded;
+    next();
+  } catch (e) { res.status(401).json({ error: 'Token invalide' }); }
+};
+
+// GET /api/payments - Liste tous les paiements (admin)
+router.get('/', authenticateAdmin, async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT
+        p.id,
+        p.order_id,
+        p.amount,
+        p.currency,
+        p.payment_method AS method,
+        p.payment_status AS status,
+        p.transaction_id,
+        p.gateway_response,
+        p.processed_at,
+        p.created_at,
+        p.updated_at,
+        o.order_number,
+        o.total_amount AS order_total,
+        o.notes,
+        u.first_name,
+        u.last_name,
+        u.email AS user_email,
+        u.phone AS user_phone
+      FROM payments p
+      LEFT JOIN orders o ON o.id = p.order_id
+      LEFT JOIN users u ON u.id = o.user_id
+      ORDER BY p.created_at DESC
+    `);
+
+    const payments = rows.map(p => {
+      let customerName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+      let customerEmail = p.user_email;
+      let customerPhone = p.user_phone;
+      if (!customerName || !customerEmail) {
+        try {
+          const notes = JSON.parse(p.notes || '{}');
+          const c = notes.customer || {};
+          customerName = customerName || `${c.first_name || ''} ${c.last_name || ''}`.trim();
+          customerEmail = customerEmail || c.email;
+          customerPhone = customerPhone || c.phone;
+        } catch (e) { /* ignore */ }
+      }
+      let refunded = 0;
+      try {
+        const gr = JSON.parse(p.gateway_response || '{}');
+        refunded = parseFloat(gr.refunded_amount || 0);
+      } catch (e) { /* ignore */ }
+      return {
+        id: p.id,
+        order_id: p.order_id,
+        order_number: p.order_number,
+        amount: parseFloat(p.amount) || 0,
+        currency: p.currency || 'EUR',
+        method: p.method,
+        status: p.status,
+        transaction_id: p.transaction_id,
+        processed_at: p.processed_at,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        customer_name: customerName || 'Client',
+        customer_email: customerEmail || '',
+        customer_phone: customerPhone || '',
+        refunded_amount: refunded
+      };
+    });
+
+    res.json({ payments, total: payments.length });
+  } catch (error) {
+    console.error('Erreur GET /payments:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+// PATCH /api/payments/:id/status - Mettre à jour statut (admin)
+router.patch('/:id/status', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const allowed = ['pending', 'processing', 'completed', 'failed', 'refunded'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: 'Statut invalide' });
+    }
+    await query(`
+      UPDATE payments SET payment_status = ?, updated_at = CURRENT_TIMESTAMP
+      ${status === 'completed' ? ', processed_at = CURRENT_TIMESTAMP' : ''}
+      WHERE id = ?
+    `, [status, id]);
+    res.json({ success: true, message: 'Statut mis à jour' });
+  } catch (error) {
+    console.error('Erreur PATCH /payments/:id/status:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+// POST /api/payments/:id/refund - Rembourser un paiement (admin)
+router.post('/:id/refund', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+    const refundAmount = parseFloat(amount);
+    if (!refundAmount || refundAmount <= 0) {
+      return res.status(400).json({ error: 'Montant invalide' });
+    }
+    const rows = await query(`SELECT * FROM payments WHERE id = ?`, [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Paiement non trouvé' });
+    const payment = rows[0];
+    if (refundAmount > parseFloat(payment.amount)) {
+      return res.status(400).json({ error: 'Montant supérieur au paiement initial' });
+    }
+    const gatewayData = {
+      refunded_amount: refundAmount,
+      refund_reason: reason || 'Remboursement',
+      refunded_at: new Date().toISOString()
+    };
+    await query(`
+      UPDATE payments
+      SET payment_status = 'refunded',
+          gateway_response = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [JSON.stringify(gatewayData), id]);
+    res.json({ success: true, message: 'Remboursement traité', refunded: refundAmount });
+  } catch (error) {
+    console.error('Erreur POST /payments/:id/refund:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+// DELETE /api/payments/:id - Supprimer un paiement (admin)
+router.delete('/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(`DELETE FROM payments WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Paiement non trouvé' });
+    }
+    res.json({ success: true, message: 'Paiement supprimé' });
+  } catch (error) {
+    console.error('Erreur DELETE /payments/:id:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
 module.exports = router;

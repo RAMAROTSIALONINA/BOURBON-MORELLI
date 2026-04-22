@@ -11,6 +11,18 @@ import {
 } from 'lucide-react';
 import cartService from '../services/cartService';
 
+const BACKEND_URL = 'http://localhost:5003';
+
+// Préfixe l'URL avec le backend si l'image vient des uploads
+const resolveImageUrl = (url) => {
+  if (!url) return '/images/placeholder-product.jpg';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+    return `${BACKEND_URL}/${url.replace(/^\//, '')}`;
+  }
+  return url;
+};
+
 const CartPage = () => {
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +31,22 @@ const CartPage = () => {
   const [total, setTotal] = useState(0);
 
   useEffect(() => {
+    // Nettoyage unique des anciennes données de démo (Nappe + T-shirt forcés)
+    const CART_CLEANUP_FLAG = 'cart_demo_cleaned_v1';
+    if (!localStorage.getItem(CART_CLEANUP_FLAG)) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('cart') || '[]');
+        const isDemoCart = Array.isArray(stored) && stored.some(
+          (it) => it?.name === 'Nappe de Table Luxe' || it?.name === 'T-shirt Premium'
+        );
+        if (isDemoCart) {
+          localStorage.removeItem('cart');
+          console.log('🧹 Anciennes données de démo supprimées du panier');
+        }
+      } catch (e) { /* ignore */ }
+      localStorage.setItem(CART_CLEANUP_FLAG, '1');
+    }
+
     // Charger le panier depuis cartService
     const loadCart = () => {
       try {
@@ -169,7 +197,7 @@ const CartPage = () => {
                     {/* Image produit */}
                     <div className="flex-shrink-0">
                       <img
-                        src={item.image || '/images/placeholder-product.jpg'}
+                        src={resolveImageUrl(item.image || item.image_url || item.images?.[0])}
                         alt={item.name}
                         className="w-24 h-24 object-cover rounded-lg"
                         onError={(e) => {

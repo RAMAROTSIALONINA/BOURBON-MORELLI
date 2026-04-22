@@ -45,8 +45,8 @@ router.post('/register', [
 
     // Insérer le nouvel utilisateur
     const result = await query(
-      `INSERT INTO users (first_name, last_name, email, password_hash, phone, role) 
-       VALUES (?, ?, ?, ?, ?, 'customer')`,
+      `INSERT INTO users (first_name, last_name, email, password_hash, phone, role, status)
+       VALUES (?, ?, ?, ?, ?, 'customer', 1)`,
       [first_name, last_name, email, passwordHash, phone]
     );
 

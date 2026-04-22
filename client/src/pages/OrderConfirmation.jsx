@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Check, Package, CreditCard, Wallet, Smartphone, ArrowLeft, AlertTriangle, XCircle, Shield } from 'lucide-react';
+import { Check, CreditCard, Wallet, Smartphone, XCircle, Shield } from 'lucide-react';
 
 const OrderConfirmation = () => {
   const location = useLocation();
@@ -236,15 +236,6 @@ const OrderConfirmation = () => {
     }).format(price);
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
   const getPaymentIcon = (method) => {
     switch (method) {
       case 'card':
@@ -398,7 +389,7 @@ const OrderConfirmation = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>Livraison</span>
-                    <span>{order.shipping === 0 ? 'Gratuite' : formatPrice(order.shipping)}</span>
+                    <span>{!order.shippingCost || order.shippingCost === 0 ? 'Gratuite' : formatPrice(order.shippingCost)}</span>
                   </div>
                   <div className="flex justify-between font-semibold text-lg pt-2 border-t">
                     <span>Total</span>

@@ -362,6 +362,7 @@ router.get('/orders', authenticateToken, async (req, res) => {
       params.push(status);
     }
 
+    // Construction de la requête avec valeurs directes
     const ordersQuery = `
       SELECT 
         o.*,
@@ -371,10 +372,10 @@ router.get('/orders', authenticateToken, async (req, res) => {
       ${whereClause}
       GROUP BY o.id
       ORDER BY o.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT ${parseInt(limit) || 10} OFFSET ${parseInt(offset) || 0}
     `;
 
-    const orders = await query(ordersQuery, [...params, parseInt(limit), parseInt(offset)]);
+    const orders = await query(ordersQuery, params);
 
     // Comptage total
     const countQuery = `
@@ -417,6 +418,7 @@ router.get('/reviews', authenticateToken, async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
 
+    // Construction de la requête avec valeurs directes
     const reviewsQuery = `
       SELECT 
         pr.*,
@@ -427,10 +429,10 @@ router.get('/reviews', authenticateToken, async (req, res) => {
       LEFT JOIN products p ON pr.product_id = p.id
       WHERE pr.user_id = ?
       ORDER BY pr.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT ${parseInt(limit) || 10} OFFSET ${parseInt(offset) || 0}
     `;
 
-    const reviews = await query(reviewsQuery, [userId, parseInt(limit), parseInt(offset)]);
+    const reviews = await query(reviewsQuery, [userId]);
 
     // Comptage total
     const countQuery = 'SELECT COUNT(*) as total FROM product_reviews WHERE user_id = ?';
@@ -464,43 +466,58 @@ router.get('/reviews', authenticateToken, async (req, res) => {
 // Routes admin
 router.get('/admin/list', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, role } = req.query;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
+    const { search, role } = req.query;
+
+    // S'assurer que les valeurs sont des nombres entiers valides
+    const validatedLimit = parseInt(limit) || 20;
+    const validatedOffset = parseInt(offset) || 0;
 
     let whereClause = 'WHERE 1=1';
-    let params = [];
+    const params = [];
 
     if (search) {
       whereClause += ' AND (first_name LIKE ? OR last_name LIKE ? OR email LIKE ?)';
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    if (role) {
+    if (role && ['customer', 'admin'].includes(role)) {
       whereClause += ' AND role = ?';
       params.push(role);
     }
 
-    // Test simple sans transformation
-    const usersQuery = `
-      SELECT 
+    // Construction de la requête avec les valeurs directement intégrées pour éviter les erreurs de paramètres
+    let usersQuery = `
+      SELECT
         id, first_name, last_name, email, phone, role, status, created_at
       FROM users
+      ${whereClause}
       ORDER BY created_at DESC
-      LIMIT 5
+      LIMIT ${validatedLimit} OFFSET ${validatedOffset}
     `;
 
-    const users = await query(usersQuery);
-    console.log('USERS BRUTS:', users);
+    console.log('Requête SQL:', usersQuery);
+    console.log('Paramètres WHERE:', params);
+    
+    const users = await query(usersQuery, params);
+
+    const [countRow] = await query(
+      `SELECT COUNT(*) AS total FROM users ${whereClause}`,
+      params
+    );
+    const total = countRow.total;
 
     res.json({
-      users: users,
+      users,
       pagination: {
-        current_page: 1,
-        per_page: 5,
-        total: users.length,
-        total_pages: 1,
-        has_next: false,
-        has_prev: false
+        current_page: page,
+        per_page: limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+        has_next: page * limit < total,
+        has_prev: page > 1
       }
     });
 
@@ -596,11 +613,14 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
   body('status').optional().isIn(['active', 'inactive']).withMessage('Le statut doit être actif ou inactif')
 ], handleValidationErrors, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'ID invalide', message: 'ID utilisateur invalide' });
+    }
     const { first_name, last_name, email, phone, role, status, password, address, city, postal_code, country } = req.body;
 
     // Vérifier si l'utilisateur existe
-    const existingUsers = await query('SELECT id, email FROM users WHERE id = ?', [userId]);
+    const existingUsers = await query('SELECT id, email, role FROM users WHERE id = ?', [userId]);
     if (existingUsers.length === 0) {
       return res.status(404).json({
         error: 'Utilisateur non trouvé',
@@ -608,8 +628,37 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
       });
     }
 
+    const target = existingUsers[0];
+
+    // Empêcher un admin de se rétrograder lui-même
+    if (role && role !== 'admin' && userId === req.user.id) {
+      return res.status(403).json({
+        error: 'Opération interdite',
+        message: 'Vous ne pouvez pas modifier votre propre rôle administrateur'
+      });
+    }
+
+    // Empêcher de rétrograder le dernier admin
+    if (role && role !== 'admin' && target.role === 'admin') {
+      const [{ cnt }] = await query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin'");
+      if (cnt <= 1) {
+        return res.status(403).json({
+          error: 'Opération interdite',
+          message: 'Impossible de rétrograder le dernier administrateur'
+        });
+      }
+    }
+
+    // Empêcher de désactiver son propre compte
+    if (status === 'inactive' && userId === req.user.id) {
+      return res.status(403).json({
+        error: 'Opération interdite',
+        message: 'Vous ne pouvez pas désactiver votre propre compte'
+      });
+    }
+
     // Si l'email est modifié, vérifier qu'il n'est pas déjà utilisé
-    if (email && email !== existingUsers[0].email) {
+    if (email && email !== target.email) {
       const emailCheck = await query('SELECT id FROM users WHERE email = ? AND id != ?', [email, userId]);
       if (emailCheck.length > 0) {
         return res.status(400).json({
@@ -657,7 +706,7 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
     if (password && password.trim() !== '') {
       const bcrypt = require('bcryptjs');
       const hashedPassword = await bcrypt.hash(password, 10);
-      updates.push('password = ?');
+      updates.push('password_hash = ?');
       params.push(hashedPassword);
     }
 
@@ -715,7 +764,10 @@ router.put('/admin/:id', authenticateToken, requireAdmin, [
 // DELETE /api/users/admin/:id - Supprimer un utilisateur (admin)
 router.delete('/admin/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'ID invalide', message: 'ID utilisateur invalide' });
+    }
 
     // Vérifier si l'utilisateur existe
     const existingUsers = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
@@ -726,17 +778,46 @@ router.delete('/admin/:id', authenticateToken, requireAdmin, async (req, res) =>
       });
     }
 
+    const target = existingUsers[0];
+
+    // Empêcher l'auto-suppression
+    if (userId === req.user.id) {
+      return res.status(403).json({
+        error: 'Opération interdite',
+        message: 'Vous ne pouvez pas supprimer votre propre compte'
+      });
+    }
+
     // Empêcher la suppression de l'utilisateur admin principal
-    if (userId == 1) {
+    if (userId === 1) {
       return res.status(403).json({
         error: 'Suppression non autorisée',
         message: 'Impossible de supprimer le compte administrateur principal'
       });
     }
 
-    // Supprimer l'utilisateur et ses données associées
+    // Empêcher la suppression d'un autre admin (seul le super-admin id=1 peut supprimer un admin)
+    if (target.role === 'admin' && req.user.id !== 1) {
+      return res.status(403).json({
+        error: 'Opération interdite',
+        message: 'Seul l\'administrateur principal peut supprimer un autre administrateur'
+      });
+    }
+
+    // Protection dernier admin
+    if (target.role === 'admin') {
+      const [{ cnt }] = await query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin'");
+      if (cnt <= 1) {
+        return res.status(403).json({
+          error: 'Opération interdite',
+          message: 'Impossible de supprimer le dernier administrateur'
+        });
+      }
+    }
+
+    // Anonymiser les commandes au lieu de les supprimer (garder historique)
+    await query('UPDATE orders SET user_id = NULL WHERE user_id = ?', [userId]);
     await query('DELETE FROM addresses WHERE user_id = ?', [userId]);
-    await query('DELETE FROM orders WHERE user_id = ?', [userId]);
     await query('DELETE FROM users WHERE id = ?', [userId]);
 
     res.json({
@@ -788,25 +869,32 @@ router.get('/admin/stats', authenticateToken, requireAdmin, async (req, res) => 
   }
 });
 
+// Middleware: endpoints réservés au développement uniquement
+const devOnly = (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Non trouvé', message: 'Endpoint non disponible' });
+  }
+  next();
+};
+
 // GET /api/users/admin/temp-token - Obtenir un token admin temporaire (développement uniquement)
-router.get('/admin/temp-token', async (req, res) => {
+router.get('/admin/temp-token', devOnly, async (req, res) => {
   try {
     const jwt = require('jsonwebtoken');
-    
-    // Token admin pré-généré
-    const adminToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJhZG1pbkBib3VyYm9ubW9yZWxsaS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzU4MjI4ODQsImV4cCI6MTc3NjQyNzY4NH0.HcVFO8j36P8Q1Shpv6ohF0Gttl8eIwOTYpAWMgFgXl8';
-    
-    // Vérifier et décoder le token
-    const decoded = jwt.verify(adminToken, 'bourbon_morelli_jwt_secret_key_2024_very_long_and_secure');
-    
+
+    // Générer un token admin FRAIS (valide 7 jours)
+    const payload = {
+      id: 1,
+      email: 'admin@bourbonmorelli.com',
+      role: 'admin'
+    };
+    const secret = process.env.JWT_SECRET || 'your-secret-key';
+    const adminToken = jwt.sign(payload, secret, { expiresIn: '7d' });
+
     res.json({
       message: 'Token admin temporaire pour développement',
       token: adminToken,
-      user: {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role
-      },
+      user: payload,
       warning: 'Ce endpoint ne doit être utilisé qu\'en développement'
     });
   } catch (error) {
@@ -819,7 +907,7 @@ router.get('/admin/temp-token', async (req, res) => {
 });
 
 // GET /api/users/admin/dev-bypass - Endpoint de contournement pour développement (sans auth)
-router.get('/admin/dev-bypass', async (req, res) => {
+router.get('/admin/dev-bypass', devOnly, async (req, res) => {
   try {
     console.log('Endpoint de contournement utilisé - Mode développement');
     

@@ -1,96 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  Bell, 
-  LogOut, 
+import {
+  Search,
   User,
+  LogOut,
+  Bell,
   ChevronDown,
-  X,
-  ShoppingCart,
-  MessageSquare
+  Settings,
+  X
 } from 'lucide-react';
-import notificationService from '../../services/notificationService';
+import useNotificationStore from '../../services/notificationService';
 
 // Header Admin Simple et Efficace - Version 2.0
 // Gauche: Logo BOURBON MORELLI | Droite: Recherche + Notifications
 
 const AdminHeader = () => {
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifications, setNotifications] = useState([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-
-  // Charger les notifications système
-  const loadNotifications = async () => {
-    try {
-      setNotificationsLoading(true);
-      
-      // Simuler des notifications système basées sur les événements récents
-      const systemNotifications = [
-        {
-          id: 1,
-          title: 'Système opérationnel',
-          message: 'Tous les services sont en ligne et fonctionnels',
-          type: 'system',
-          time: 'Maintenant',
-          read: false,
-          icon: Bell,
-          action: '/admin/notifications'
-        },
-        {
-          id: 2,
-          title: 'Nouveaux utilisateurs',
-          message: '3 nouveaux clients se sont inscrits aujourd\'hui',
-          type: 'user',
-          time: 'Il y a 2 heures',
-          read: false,
-          icon: User,
-          action: '/admin/users'
-        },
-        {
-          id: 3,
-          title: 'Activité récente',
-          message: '5 commandes traitées dans les dernières 24h',
-          type: 'order',
-          time: 'Il y a 3 heures',
-          read: true,
-          icon: ShoppingCart,
-          action: '/admin/orders'
-        }
-      ];
-      
-      setNotifications(systemNotifications);
-    } catch (error) {
-      console.error('Erreur lors du chargement des notifications:', error);
-      // En cas d'erreur, afficher des notifications par défaut
-      setNotifications([
-        {
-          id: 0,
-          title: 'Notifications',
-          message: 'Cliquez pour voir toutes les notifications',
-          type: 'info',
-          time: 'Maintenant',
-          read: false,
-          icon: Bell,
-          action: '/admin/notifications'
-        }
-      ]);
-    } finally {
-      setNotificationsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadNotifications();
-    // Rafraîchir les notifications toutes les 30 secondes
-    const interval = setInterval(loadNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
   const [adminUser, setAdminUser] = useState(null);
   const navigate = useNavigate();
+
+  // Utiliser le store global de notifications
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    removeNotification,
+    clearNotifications
+  } = useNotificationStore();
+
+  // Fermer les dropdowns en cliquant à l'extérieur
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('[data-notif-dropdown]') && !e.target.closest('[data-notif-button]')) {
+        setIsNotificationsOpen(false);
+      }
+      if (!e.target.closest('[data-profile-dropdown]') && !e.target.closest('[data-profile-button]')) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const user = localStorage.getItem('adminUser');
@@ -102,25 +55,16 @@ const AdminHeader = () => {
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
-    navigate('/login');
+    setAdminUser(null);
+    navigate('/admin/login');
   };
 
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      navigate(`/admin/search?q=${encodeURIComponent(searchQuery)}`);
+      navigate(`/admin/orders?search=${encodeURIComponent(searchQuery)}`);
     }
   };
-
-  // const markNotificationAsRead = (id) => {
-  //   setNotifications(prev => 
-  //     prev.map(notif => 
-  //       notif.id === id ? { ...notif, read: true } : notif
-  //     )
-  //   );
-  // };
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <>
@@ -158,15 +102,113 @@ const AdminHeader = () => {
               </div>
 
               {/* Notifications */}
-              <button
-                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                className="p-2 text-white hover:bg-gray-800 rounded-full relative"
-              >
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-0 right-0 block h-3 w-3 rounded-full bg-red-500 border-2 border-white"></span>
+              <div className="relative">
+                <button
+                  data-notif-button
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="p-2 text-white hover:bg-gray-800 rounded-full relative"
+                  aria-label="Notifications"
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-5 min-w-[1.25rem] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold border-2 border-gray-900">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Dropdown Notifications */}
+                {isNotificationsOpen && (
+                  <div
+                    data-notif-dropdown
+                    className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-2xl ring-1 ring-black ring-opacity-5 z-50 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                        <p className="text-xs text-gray-500">
+                          {unreadCount > 0 ? `${unreadCount} non lue(s)` : 'Tout est à jour'}
+                        </p>
+                      </div>
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={clearNotifications}
+                          className="text-xs text-gray-600 hover:text-red-600 font-medium"
+                        >
+                          Tout effacer
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-96 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                          <Bell className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                          <p className="text-sm text-gray-500">Aucune notification</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Les nouvelles commandes apparaîtront ici
+                          </p>
+                        </div>
+                      ) : (
+                        [...notifications].reverse().map((n) => (
+                          <div
+                            key={n.id}
+                            onClick={() => {
+                              markAsRead(n.id);
+                              if (n.link) {
+                                navigate(n.link);
+                                setIsNotificationsOpen(false);
+                              }
+                            }}
+                            className={`px-4 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors ${
+                              !n.read ? 'bg-blue-50/40' : ''
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              {!n.read && (
+                                <span className="mt-1.5 h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {n.title || 'Notification'}
+                                </p>
+                                {n.message && (
+                                  <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">
+                                    {n.message}
+                                  </p>
+                                )}
+                                {n.time && (
+                                  <p className="text-[11px] text-gray-400 mt-1">{n.time}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeNotification(n.id);
+                                }}
+                                className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                                aria-label="Supprimer"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                      <Link
+                        to="/admin/orders"
+                        onClick={() => setIsNotificationsOpen(false)}
+                        className="block text-center text-xs font-medium text-gray-700 hover:text-gray-900"
+                      >
+                        Voir toutes les commandes →
+                      </Link>
+                    </div>
+                  </div>
                 )}
-              </button>
+              </div>
 
               {/* Profil */}
               <div className="relative">
@@ -191,7 +233,7 @@ const AdminHeader = () => {
                           {adminUser?.name || 'Admin'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {adminUser?.email || 'admin@bourbonmorelli.com'}
+                          {adminUser?.email || 'admin@example.com'}
                         </p>
                       </div>
                       <div className="py-1">
@@ -208,7 +250,7 @@ const AdminHeader = () => {
                           onClick={() => setIsProfileOpen(false)}
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                         >
-                          <User className="h-4 w-4 mr-3" />
+                          <Settings className="h-4 w-4 mr-3" />
                           Paramètres
                         </Link>
                       </div>
@@ -285,7 +327,7 @@ const AdminHeader = () => {
                     {adminUser?.name || 'Admin'}
                   </p>
                   <p className="text-xs text-gray-500 truncate">
-                    {adminUser?.email || 'admin@bourbonmorelli.com'}
+                    {adminUser?.email || 'admin@example.com'}
                   </p>
                 </div>
               </div>

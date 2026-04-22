@@ -184,7 +184,7 @@ const orderService = {
       console.log('Status data:', JSON.stringify(statusData, null, 2));
       
       const config = await getAuthConfig();
-      const response = await axios.patch(
+      const response = await axios.put(
         `${API_BASE_URL}/orders/${orderId}/status`,
         statusData,
         config
