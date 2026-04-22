@@ -98,7 +98,7 @@ function App() {
       {/* Header public seulement sur les pages non-admin */}
       {!isAdminPage && <Header cartCount={cartCount} />}
       
-      <main className="flex-grow pt-32 lg:pt-36">
+      <main className={`flex-grow ${isAdminPage ? '' : 'pt-32 lg:pt-36'}`}>
         <Routes>
           {/* Routes publiques */}
           <Route path="/" element={<Home />} />

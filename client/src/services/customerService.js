@@ -72,10 +72,16 @@ const customerService = {
       console.log('=== UPDATE CUSTOMER ===');
       console.log('Customer ID:', customerId);
       console.log('Customer data:', JSON.stringify(customerData, null, 2));
-      
+
+      const idStr = String(customerId);
+      if (idStr.startsWith('g-')) {
+        throw { error: 'Non autorisé', message: 'Les clients invités ne peuvent pas être modifiés (ils n\'ont pas de compte).' };
+      }
+      const realId = idStr.startsWith('u-') ? idStr.slice(2) : idStr;
+
       const config = await getAuthConfig();
       const response = await axios.put(
-        `${API_BASE_URL}/customers/${customerId}`,
+        `${API_BASE_URL}/customers/${realId}`,
         customerData,
         config
       );
@@ -113,21 +119,33 @@ const customerService = {
     }
   },
 
-  // Supprimer un client
-  deleteCustomer: async (customerId) => {
+  // Supprimer un client (gère les IDs composites : u-XX pour inscrits, g-XX pour invités)
+  deleteCustomer: async (customerId, customerEmail) => {
     try {
       console.log('=== DELETE CUSTOMER ===');
-      console.log('Customer ID:', customerId);
-      
+      console.log('Customer ID:', customerId, 'Email:', customerEmail);
+
+      const idStr = String(customerId);
+      let url;
+      if (idStr.startsWith('u-')) {
+        // Inscrit : supprimer depuis la table users par ID numérique
+        const userId = idStr.slice(2);
+        url = `${API_BASE_URL}/customers/${userId}`;
+      } else if (idStr.startsWith('g-')) {
+        // Invité : supprimer par email via route dédiée
+        if (!customerEmail) throw new Error('Email requis pour supprimer un invité');
+        url = `${API_BASE_URL}/customers/guest/${encodeURIComponent(customerEmail)}`;
+      } else {
+        // Fallback : ID brut (rétro-compatibilité)
+        url = `${API_BASE_URL}/customers/${idStr}`;
+      }
+
       const config = await getAuthConfig();
-      const response = await axios.delete(
-        `${API_BASE_URL}/customers/${customerId}`,
-        config
-      );
-      
+      const response = await axios.delete(url, config);
+
       console.log('=== RESPONSE ===');
       console.log('Response:', JSON.stringify(response.data, null, 2));
-      
+
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la suppression du client:', error);

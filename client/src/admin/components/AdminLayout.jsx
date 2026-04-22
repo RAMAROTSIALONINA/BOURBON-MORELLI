@@ -40,7 +40,7 @@ const AdminLayout = () => {
         <AdminHeader />
         
         {/* Page content */}
-        <main className="bg-gray-50">
+        <main className="bg-gray-50 pt-16">
           <div className="px-6 py-6">
             <AdminRoutes />
           </div>

@@ -2,7 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import ProductGrid from '../components/ProductGrid';
 import { Filter } from 'lucide-react';
-import productDataService from '../services/productDataService';
+import productServicePublic from '../services/productServicePublic';
+
+// Base URL du backend (pour servir les images en bypassant le proxy React)
+const BACKEND_URL = 'http://localhost:5003';
+
+// Transforme "/uploads/products/xxx.png" → "http://localhost:5003/uploads/products/xxx.png"
+// Laisse inchangé les URLs absolues (http://...) et les chemins /images/... du seed
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
 
 const Collections = ({ onAddToCart }) => {
   const { category } = useParams();
@@ -10,50 +22,88 @@ const Collections = ({ onAddToCart }) => {
   const [loading, setLoading] = useState(true);
   const [categoryInfo, setCategoryInfo] = useState(null);
 
-  // Utiliser le service centralisé pour les produits
-  const getAllProducts = () => {
-    return productDataService.getAllProducts();
-  };
-
   useEffect(() => {
     console.log('Collections useEffect - category:', category);
     
     const loadProducts = async () => {
       setLoading(true);
-      console.log('Loading products from mock data for category:', category);
+      console.log('Loading products from API for category:', category);
       
-      // Filtrer par catégorie si spécifiée
-      let filteredProducts = getAllProducts();
-      
-      if (category) {
-        console.log('Filtrage par catégorie:', category);
-        filteredProducts = productDataService.getProductsByCategory(category);
-        console.log('Produits filtrés:', filteredProducts.map(p => `${p.name} (${p.category.name})`));
-      }
-
-      console.log('Produits finaux:', filteredProducts.map(p => `${p.name} (${p.category.name})`));
-      setProducts(filteredProducts);
-      
-      // Informations sur la catégorie
-      if (category) {
-        const categoryNames = {
-          'nappes': 'Nappes',
-          't-shirts': 'T-Shirts',
-          'polos': 'Polos',
-          'pantalons': 'Pantalons',
-          'nappes-de-table': 'Nappes',
-          'tshirt': 'T-Shirts',
-          'polo': 'Polos',
-          'pantalon': 'Pantalons'
-        };
+      try {
+        // Récupérer tous les produits depuis l'API
+        let productsData = [];
         
-        setCategoryInfo({
-          name: categoryNames[category] || category.charAt(0).toUpperCase() + category.slice(1),
-          description: `Découvrez notre collection de ${categoryNames[category] || category} de qualité supérieure.`
-        });
+        if (category) {
+          console.log('Filtrage par catégorie:', category);
+          productsData = await productServicePublic.getProductsByCategory(category);
+        } else {
+          productsData = await productServicePublic.getAllProducts();
+        }
+        
+        // Formater les produits pour le composant ProductGrid
+        const formattedProducts = Array.isArray(productsData) ? productsData.map(product => ({
+          id: product.id,
+          name: product.name,
+          slug: product.name.toLowerCase().replace(/\s+/g, '-'),
+          price: product.price,
+          compare_price: product.compare_price || null,
+          description: product.description,
+          category: { name: typeof product.category === 'string' ? product.category : product.category?.name || 'Non catégorisé' },
+          images: product.images && product.images.length > 0
+            ? product.images.map(u => resolveImageUrl(u))
+            : ['/images/placeholder-product.jpg'],
+          featured: product.status === 'active',
+          rating: product.rating || 4,
+          reviews_count: product.reviews_count || 0,
+          inventory_quantity: product.stock || 0,
+          stock: product.stock || 0,
+          reviews: product.reviews_count || 0
+        })) : [];
+        
+        console.log('Produits formatés:', formattedProducts.map(p => `${p.name} (${p.category.name})`));
+        setProducts(formattedProducts);
+        
+        // Informations sur la catégorie
+        if (category) {
+          const categoryNames = {
+            'nappes': 'Nappes',
+            't-shirts': 'T-Shirts',
+            'polos': 'Polos',
+            'pantalons': 'Pantalons',
+            'nappes-de-table': 'Nappes',
+            'tshirt': 'T-Shirts',
+            'polo': 'Polos',
+            'pantalon': 'Pantalons',
+            'vêtements': 'Vêtements',
+            'accessoires': 'Accessoires',
+            'linge de maison': 'Linge de maison',
+            'electronique': 'Electronique',
+            'autre': 'Autre'
+          };
+          
+          setCategoryInfo({
+            name: categoryNames[category.toLowerCase()] || category.charAt(0).toUpperCase() + category.slice(1),
+            description: `Découvrez notre collection de ${categoryNames[category.toLowerCase()] || category} de qualité supérieure.`
+          });
+        }
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des produits:', error);
+        // En cas d'erreur, utiliser les données mockées comme fallback
+        console.log('Fallback vers les données mockées');
+        
+        // Importer le service de données mockées uniquement en fallback
+        const productDataService = await import('../services/productDataService');
+        let fallbackProducts = productDataService.default.getAllProducts();
+        
+        if (category) {
+          fallbackProducts = productDataService.default.getProductsByCategory(category);
+        }
+        
+        setProducts(fallbackProducts);
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
     
     loadProducts();

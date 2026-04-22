@@ -15,9 +15,11 @@ import {
   Shield
 } from 'lucide-react';
 import userService from '../../services/userService';
+import useNotificationStore from '../../services/notificationService';
 
 const UserManagement = () => {
   const navigate = useNavigate();
+  const addNotification = useNotificationStore(s => s.addNotification);
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -284,10 +286,16 @@ const UserManagement = () => {
       // Recharger la liste pour voir le nouvel utilisateur
       await loadUsers();
       await loadStats();
-      
+
       setShowAddModal(false);
       resetForm();
-      
+      addNotification({
+        type: 'success',
+        category: 'Utilisateur',
+        title: 'Utilisateur créé',
+        message: `${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName} (${response.user?.role || formData.role}) ajouté`
+      });
+
       alert(`Utilisateur ajouté avec succès!\n\nID: ${response.user?.id || 'N/A'}\nNom: ${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName}\nEmail: ${response.user?.email || formData.email}\n\nNote: Utilisateur ajouté dans la base de données MySQL!`);
     } catch (error) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
@@ -376,7 +384,13 @@ const UserManagement = () => {
         
         setShowEditModal(false);
         resetForm();
-        
+        addNotification({
+          type: 'info',
+          category: 'Utilisateur',
+          title: 'Utilisateur modifié',
+          message: `${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName} (${response.user?.email || formData.email}) mis à jour`
+        });
+
         alert(`Utilisateur modifié avec succès!\n\nID: ${response.user?.id || selectedUser.id}\nNom: ${response.user?.first_name || formData.firstName} ${response.user?.last_name || formData.lastName}\nEmail: ${response.user?.email || formData.email}\n\nNote: Changements sauvegardés en base de données!`);
       } catch (error) {
         console.log('Erreur avec authentification, utilisation du mode développement:', error.message);
@@ -452,8 +466,14 @@ const UserManagement = () => {
         }
         
         setShowDeleteModal(false);
+        addNotification({
+          type: 'warning',
+          category: 'Utilisateur',
+          title: 'Utilisateur supprimé',
+          message: `${selectedUser.firstName} ${selectedUser.lastName} (${selectedUser.email}) supprimé`
+        });
         setSelectedUser(null);
-        
+
         alert(`Utilisateur supprimé avec succès!\n\nID: ${response.deletedUserId}\nNom: ${selectedUser.firstName} ${selectedUser.lastName}\nEmail: ${selectedUser.email}\n\nNote: Changement sauvegardé en base de données MySQL!`);
       } catch (error) {
         console.log('Erreur avec authentification, utilisation du mode développement:', error.message);

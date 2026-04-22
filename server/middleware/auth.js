@@ -18,9 +18,17 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Récupérer les informations de l'utilisateur depuis la base de données
+    const userId = decoded.userId || null;
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Accès non autorisé',
+        message: 'Token invalide'
+      });
+    }
+    
     const users = await query(
       'SELECT id, first_name, last_name, email, role FROM users WHERE id = ?',
-      [decoded.userId]
+      [userId]
     );
 
     if (users.length === 0) {

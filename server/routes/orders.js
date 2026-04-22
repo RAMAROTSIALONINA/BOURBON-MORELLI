@@ -1,306 +1,89 @@
 const express = require('express');
 const router = express.Router();
-const { body, validationResult } = require('express-validator');
-const { query, transaction } = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const mysql = require('mysql2/promise');
+require('dotenv').config();
 
-// Validation middleware
-const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      error: 'Erreur de validation',
-      details: errors.array()
-    });
+// Middleware pour vérifier l'authentification
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token requis' });
   }
-  next();
+
+  const token = authHeader.replace('Bearer ', '');
+  
+  try {
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Token invalide' });
+  }
 };
 
-// POST /api/orders - Créer une nouvelle commande
-router.post('/', authenticateToken, [
-  body('items').isArray({ min: 1 }),
-  body('items.*.product_id').isInt({ min: 1 }),
-  body('items.*.quantity').isInt({ min: 1 }),
-  body('items.*.variant_id').optional().isInt({ min: 1 }),
-  body('shipping_address').isObject(),
-  body('shipping_address.first_name').trim().isLength({ min: 2 }),
-  body('shipping_address.last_name').trim().isLength({ min: 2 }),
-  body('shipping_address.street_address').trim().isLength({ min: 5 }),
-  body('shipping_address.city').trim().isLength({ min: 2 }),
-  body('shipping_address.postal_code').trim().isLength({ min: 3 }),
-  body('shipping_address.country').trim().isLength({ min: 2 }),
-  body('billing_address').optional().isObject(),
-  body('currency').optional().isIn(['EUR', 'USD', 'MGA']),
-  body('notes').optional().isString()
-], handleValidationErrors, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { items, shipping_address, billing_address, currency = 'EUR', notes } = req.body;
-
-    // Utiliser l'adresse de livraison comme adresse de facturation si non spécifiée
-    const billingAddr = billing_address || shipping_address;
-
-    return await transaction(async (connection) => {
-      // Générer un numéro de commande unique
-      const orderNumber = `BM${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-      // Calculer le total et vérifier le stock
-      let subtotal = 0;
-      const orderItems = [];
-
-      for (const item of items) {
-        // Récupérer les informations du produit
-        let productQuery;
-        let productParams;
-
-        if (item.variant_id) {
-          productQuery = `
-            SELECT 
-              p.*, 
-              pv.name as variant_name,
-              pv.sku as variant_sku,
-              pv.price as variant_price,
-              COALESCE(SUM(i.quantity), 0) as inventory_quantity
-            FROM products p
-            LEFT JOIN product_variants pv ON p.id = pv.product_id
-            LEFT JOIN inventory i ON pv.id = i.variant_id
-            WHERE p.id = ? AND pv.id = ? AND p.status = 'active'
-            GROUP BY p.id, pv.id
-          `;
-          productParams = [item.product_id, item.variant_id];
-        } else {
-          productQuery = `
-            SELECT 
-              p.*,
-              COALESCE(SUM(i.quantity), 0) as inventory_quantity
-            FROM products p
-            LEFT JOIN inventory i ON p.id = i.product_id AND i.variant_id IS NULL
-            WHERE p.id = ? AND p.status = 'active'
-            GROUP BY p.id
-          `;
-          productParams = [item.product_id];
-        }
-
-        const [product] = await connection.execute(productQuery, productParams);
-
-        if (product.length === 0) {
-          throw new Error(`Produit ${item.product_id} non trouvé`);
-        }
-
-        const productData = product[0];
-
-        // Vérifier le stock
-        if (productData.inventory_quantity < item.quantity) {
-          throw new Error(`Stock insuffisant pour ${productData.name}`);
-        }
-
-        const unitPrice = item.variant_id ? productData.variant_price : productData.price;
-        const itemTotal = unitPrice * item.quantity;
-        subtotal += itemTotal;
-
-        orderItems.push({
-          product_id: item.product_id,
-          variant_id: item.variant_id || null,
-          product_name: productData.name,
-          product_sku: item.variant_id ? productData.variant_sku : productData.sku,
-          quantity: item.quantity,
-          unit_price: unitPrice,
-          total_price: itemTotal
-        });
-      }
-
-      // Calculer les frais de livraison (gratuit à partir de 200€)
-      const shippingAmount = subtotal >= 200 ? 0 : 9.99;
-      const taxAmount = 0; // TVA à implémenter selon les règles
-      const totalAmount = subtotal + shippingAmount + taxAmount;
-
-      // Créer la commande
-      const [orderResult] = await connection.execute(`
-        INSERT INTO orders (
-          order_number, user_id, email, status, currency, 
-          subtotal, tax_amount, shipping_amount, total_amount, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        orderNumber,
-        userId,
-        req.user.email,
-        'pending',
-        currency,
-        subtotal,
-        taxAmount,
-        shippingAmount,
-        totalAmount,
-        notes || null
-      ]);
-
-      const orderId = orderResult.insertId;
-
-      // Insérer les articles de la commande
-      for (const item of orderItems) {
-        await connection.execute(`
-          INSERT INTO order_items (
-            order_id, product_id, variant_id, product_name, product_sku,
-            quantity, unit_price, total_price
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          orderId,
-          item.product_id,
-          item.variant_id,
-          item.product_name,
-          item.product_sku,
-          item.quantity,
-          item.unit_price,
-          item.total_price
-        ]);
-      }
-
-      // Insérer les adresses
-      // Adresse de livraison
-      await connection.execute(`
-        INSERT INTO order_addresses (
-          order_id, type, first_name, last_name, company,
-          street_address, apartment, city, postal_code, country, phone
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        orderId,
-        'shipping',
-        shipping_address.first_name,
-        shipping_address.last_name,
-        shipping_address.company || null,
-        shipping_address.street_address,
-        shipping_address.apartment || null,
-        shipping_address.city,
-        shipping_address.postal_code,
-        shipping_address.country,
-        shipping_address.phone || null
-      ]);
-
-      // Adresse de facturation
-      await connection.execute(`
-        INSERT INTO order_addresses (
-          order_id, type, first_name, last_name, company,
-          street_address, apartment, city, postal_code, country, phone
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        orderId,
-        'billing',
-        billingAddr.first_name,
-        billingAddr.last_name,
-        billingAddr.company || null,
-        billingAddr.street_address,
-        billingAddr.apartment || null,
-        billingAddr.city,
-        billingAddr.postal_code,
-        billingAddr.country,
-        billingAddr.phone || null
-      ]);
-
-      // Mettre à jour le stock
-      for (const item of items) {
-        if (item.variant_id) {
-          // Mettre à jour le stock de la variante
-          await connection.execute(`
-            UPDATE inventory 
-            SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP
-            WHERE variant_id = ?
-          `, [item.quantity, item.variant_id]);
-        } else {
-          // Mettre à jour le stock du produit
-          await connection.execute(`
-            UPDATE inventory 
-            SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP
-            WHERE product_id = ? AND variant_id IS NULL
-          `, [item.quantity, item.product_id]);
-        }
-      }
-
-      // Vider le panier de l'utilisateur
-      await connection.execute(`
-        DELETE ci FROM cart_items ci
-        JOIN carts c ON ci.cart_id = c.id
-        WHERE c.user_id = ?
-      `, [userId]);
-
-      // Récupérer la commande complète
-      const [order] = await connection.execute(`
-        SELECT * FROM orders WHERE id = ?
-      `, [orderId]);
-
-      res.status(201).json({
-        message: 'Commande créée avec succès',
-        order: {
-          ...order[0],
-          items: orderItems
-        }
-      });
-    });
-
-  } catch (error) {
-    console.error('Erreur lors de la création de la commande:', error);
-    
-    if (error.message.includes('non trouvé') || error.message.includes('Stock insuffisant')) {
-      return res.status(400).json({
-        error: 'Erreur de validation',
-        message: error.message
-      });
-    }
-
-    res.status(500).json({
-      error: 'Erreur serveur',
-      message: 'Impossible de créer la commande'
-    });
-  }
-});
-
-// GET /api/orders - Récupérer les commandes de l'utilisateur
+// GET /api/orders - Récupérer les commandes (admin ou utilisateur)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
 
-    let whereClause = 'WHERE o.user_id = ?';
-    let params = [userId];
+    let whereClause = isAdmin ? '' : 'WHERE o.user_id = ?';
+    let params = isAdmin ? [] : [req.user.id];
 
     if (status) {
-      whereClause += ' AND o.status = ?';
+      whereClause += (isAdmin ? 'WHERE' : 'AND') + ' o.status = ?';
       params.push(status);
     }
 
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
+    const safeLimit = Math.max(1, Math.min(parseInt(limit) || 10, 500));
+    const safeOffset = Math.max(0, parseInt(offset) || 0);
+
     const ordersQuery = `
-      SELECT 
+      SELECT
         o.*,
+        o.email as customer_email,
+        COALESCE(u.email, o.email) as user_email,
+        COALESCE(CONCAT(u.first_name, ' ', u.last_name), '') as customer_name,
         COUNT(oi.id) as item_count
       FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
       LEFT JOIN order_items oi ON o.id = oi.order_id
       ${whereClause}
       GROUP BY o.id
       ORDER BY o.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT ${safeLimit} OFFSET ${safeOffset}
     `;
 
-    const orders = await query(ordersQuery, [...params, parseInt(limit), parseInt(offset)]);
+    const [orders] = await connection.execute(ordersQuery, params);
 
     // Comptage total
     const countQuery = `
       SELECT COUNT(*) as total FROM orders o ${whereClause}
     `;
-    const countResult = await query(countQuery, params);
+    const [countResult] = await connection.execute(countQuery, params);
     const total = countResult[0].total;
 
     // Récupérer les articles pour chaque commande
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {
-        const itemsQuery = `
+        const [items] = await connection.execute(`
           SELECT 
             oi.*,
             (SELECT image_url FROM product_images WHERE product_id = oi.product_id AND is_primary = 1 LIMIT 1) as product_image
           FROM order_items oi
           WHERE oi.order_id = ?
           ORDER BY oi.id ASC
-        `;
-
-        const items = await query(itemsQuery, [order.id]);
+        `, [order.id]);
 
         return {
           ...order,
@@ -313,14 +96,30 @@ router.get('/', authenticateToken, async (req, res) => {
       })
     );
 
+    await connection.end();
+
     res.json({
-      orders: ordersWithItems.map(order => ({
-        ...order,
-        subtotal: parseFloat(order.subtotal),
-        tax_amount: parseFloat(order.tax_amount),
-        shipping_amount: parseFloat(order.shipping_amount),
-        total_amount: parseFloat(order.total_amount)
-      })),
+      success: true,
+      orders: ordersWithItems.map(order => {
+        // Parser les notes si JSON (commandes publiques)
+        let notesData = {};
+        try { notesData = order.notes ? JSON.parse(order.notes) : {}; } catch (e) { notesData = {}; }
+        return {
+          ...order,
+          customer_name: order.customer_name?.trim() || notesData.customer_name || order.customer_email || 'Invité',
+          customer_email: order.customer_email || order.user_email,
+          customer_phone: notesData.customer_phone || null,
+          shipping_address: notesData.shipping_address || null,
+          shipping_city: notesData.shipping_city || null,
+          shipping_postal_code: notesData.shipping_postal_code || null,
+          shipping_country: notesData.shipping_country || null,
+          payment_status: notesData.payment_method ? 'paid' : null,
+          subtotal: parseFloat(order.subtotal),
+          tax_amount: parseFloat(order.tax_amount),
+          shipping_amount: parseFloat(order.shipping_amount),
+          total_amount: parseFloat(order.total_amount)
+        };
+      }),
       pagination: {
         current_page: parseInt(page),
         per_page: parseInt(limit),
@@ -343,26 +142,45 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET /api/orders/:id - Récupérer une commande spécifique
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
     const { id } = req.params;
 
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
     // Récupérer la commande
-    const orders = await query(`
-      SELECT o.* FROM orders o 
-      WHERE o.id = ? AND o.user_id = ?
-    `, [id, userId]);
+    let whereClause = 'WHERE o.id = ?';
+    let params = [id];
+    
+    if (!isAdmin) {
+      whereClause += ' AND o.user_id = ?';
+      params.push(req.user.id);
+    }
+
+    const [orders] = await connection.execute(`
+      SELECT o.*, u.email as user_email, CONCAT(u.first_name, ' ', u.last_name) as customer_name
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
+      ${whereClause}
+    `, params);
 
     if (orders.length === 0) {
+      await connection.end();
       return res.status(404).json({
         error: 'Commande non trouvée',
-        message: 'Cette commande n\'existe pas ou n\'appartient pas à cet utilisateur'
+        message: 'Cette commande n\'existe pas' + (isAdmin ? '' : ' ou ne vous appartient pas')
       });
     }
 
     const order = orders[0];
 
     // Récupérer les articles
-    const items = await query(`
+    const [items] = await connection.execute(`
       SELECT 
         oi.*,
         (SELECT image_url FROM product_images WHERE product_id = oi.product_id AND is_primary = 1 LIMIT 1) as product_image
@@ -372,24 +190,20 @@ router.get('/:id', authenticateToken, async (req, res) => {
     `, [id]);
 
     // Récupérer les adresses
-    const addresses = await query(`
+    const [addresses] = await connection.execute(`
       SELECT * FROM order_addresses 
       WHERE order_id = ? 
       ORDER BY type ASC
-    `, [id]);
-
-    // Récupérer les transactions de paiement
-    const transactions = await query(`
-      SELECT * FROM payment_transactions 
-      WHERE order_id = ? 
-      ORDER BY created_at DESC
     `, [id]);
 
     // Formater les adresses
     const shippingAddress = addresses.find(addr => addr.type === 'shipping');
     const billingAddress = addresses.find(addr => addr.type === 'billing');
 
+    await connection.end();
+
     res.json({
+      success: true,
       order: {
         ...order,
         subtotal: parseFloat(order.subtotal),
@@ -402,8 +216,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
           total_price: parseFloat(item.total_price)
         })),
         shipping_address: shippingAddress,
-        billing_address: billingAddress,
-        transactions: transactions
+        billing_address: billingAddress
       }
     });
 
@@ -416,65 +229,274 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT /api/orders/:id/cancel - Annuler une commande
-router.put('/:id/cancel', authenticateToken, async (req, res) => {
+// PUT /api/orders/:id/status - Mettre à jour le statut d'une commande (admin seulement)
+router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès admin requis' });
+    }
+
     const { id } = req.params;
+    const { status } = req.body;
 
-    // Vérifier que la commande existe et appartient à l'utilisateur
-    const orders = await query(`
-      SELECT * FROM orders 
-      WHERE id = ? AND user_id = ? AND status IN ('pending', 'confirmed')
-    `, [id, userId]);
-
-    if (orders.length === 0) {
-      return res.status(404).json({
-        error: 'Commande non trouvée',
-        message: 'Cette commande n\'existe pas, ne vous appartient pas ou ne peut plus être annulée'
-      });
+    if (!['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Statut invalide' });
     }
 
-    // Mettre à jour le statut
-    await query(`
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
+    await connection.execute(`
       UPDATE orders 
-      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
+      SET status = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [id]);
+    `, [status, id]);
 
-    // Remettre les articles en stock
-    const items = await query(`
-      SELECT product_id, variant_id, quantity 
-      FROM order_items 
-      WHERE order_id = ?
-    `, [id]);
-
-    for (const item of items) {
-      if (item.variant_id) {
-        await query(`
-          UPDATE inventory 
-          SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP
-          WHERE variant_id = ?
-        `, [item.quantity, item.variant_id]);
-      } else {
-        await query(`
-          UPDATE inventory 
-          SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP
-          WHERE product_id = ? AND variant_id IS NULL
-        `, [item.quantity, item.product_id]);
-      }
-    }
+    await connection.end();
 
     res.json({
-      message: 'Commande annulée avec succès'
+      success: true,
+      message: 'Statut de la commande mis à jour avec succès'
     });
 
   } catch (error) {
-    console.error('Erreur lors de l\'annulation de la commande:', error);
+    console.error('Erreur lors de la mise à jour du statut:', error);
     res.status(500).json({
       error: 'Erreur serveur',
-      message: 'Impossible d\'annuler la commande'
+      message: 'Impossible de mettre à jour le statut'
     });
+  }
+});
+
+// DELETE /api/orders/:id - Supprimer une commande (admin uniquement)
+router.delete('/:id', authenticateToken, async (req, res) => {
+  let connection;
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès admin requis' });
+    }
+    const { id } = req.params;
+
+    connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
+    await connection.beginTransaction();
+    await connection.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
+    const [result] = await connection.execute('DELETE FROM orders WHERE id = ?', [id]);
+    await connection.commit();
+    await connection.end();
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Commande non trouvée' });
+    }
+    res.json({ success: true, message: 'Commande supprimée' });
+  } catch (error) {
+    if (connection) { try { await connection.rollback(); await connection.end(); } catch (e) {} }
+    console.error('Erreur suppression commande:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: 'Impossible de supprimer la commande' });
+  }
+});
+
+// GET /api/orders/by-email/:email - Récupérer les commandes d'un client (public, par email)
+router.get('/by-email/:email', async (req, res) => {
+  let connection;
+  try {
+    const { email } = req.params;
+    if (!email) return res.status(400).json({ error: 'Email requis' });
+
+    connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
+    const [orders] = await connection.execute(
+      `SELECT o.*
+       FROM orders o
+       WHERE o.email = ?
+       ORDER BY o.created_at DESC`,
+      [email]
+    );
+
+    const ordersWithItems = await Promise.all(
+      orders.map(async (order) => {
+        const [items] = await connection.execute(
+          `SELECT oi.*,
+            (SELECT image_url FROM product_images WHERE product_id = oi.product_id AND is_primary = 1 LIMIT 1) as product_image
+           FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.id ASC`,
+          [order.id]
+        );
+        let notesData = {};
+        try { notesData = order.notes ? JSON.parse(order.notes) : {}; } catch (e) {}
+        return {
+          id: order.id,
+          order_number: order.order_number,
+          status: order.status,
+          date: order.created_at,
+          total: parseFloat(order.total_amount),
+          subtotal: parseFloat(order.subtotal),
+          customer_email: order.email,
+          items: items.map(it => ({
+            id: it.id,
+            product_id: it.product_id,
+            name: it.product_name,
+            quantity: it.quantity,
+            price: parseFloat(it.unit_price),
+            image: it.product_image || '/images/placeholder-product.jpg'
+          })),
+          shipping: {
+            address: notesData.shipping_address || '',
+            city: notesData.shipping_city || '',
+            postal_code: notesData.shipping_postal_code || '',
+            country: notesData.shipping_country || '',
+            method: 'Livraison standard',
+            cost: parseFloat(order.shipping_amount) || 0,
+            estimatedDelivery: new Date(new Date(order.created_at).getTime() + 5 * 86400000).toISOString()
+          },
+          payment: {
+            method: notesData.payment_method || 'card',
+            status: 'paid',
+            transactionId: order.order_number
+          }
+        };
+      })
+    );
+
+    await connection.end();
+    res.json({ success: true, orders: ordersWithItems });
+  } catch (error) {
+    if (connection) { try { await connection.end(); } catch (e) {} }
+    console.error('Erreur récupération commandes par email:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/orders/public - Création de commande publique (invité ou client)
+router.post('/public', async (req, res) => {
+  let connection;
+  try {
+    const {
+      customer = {},
+      shipping = {},
+      items = [],
+      subtotal = 0,
+      shipping_amount = 0,
+      total,
+      payment_method = 'card',
+      notes = null
+    } = req.body;
+
+    if (!customer.email || !items.length || !total) {
+      return res.status(400).json({ error: 'Données incomplètes (email, articles, total requis)' });
+    }
+
+    connection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'bourbon_morelli',
+      charset: 'utf8mb4'
+    });
+
+    await connection.beginTransaction();
+
+    // Retrouver l'utilisateur par email (optionnel)
+    let userId = null;
+    const [users] = await connection.execute(
+      'SELECT id, first_name, last_name FROM users WHERE email = ? LIMIT 1',
+      [customer.email]
+    );
+    if (users.length > 0) userId = users[0].id;
+
+    const orderNumber = 'BM-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    const notesBlob = notes || JSON.stringify({
+      customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
+      customer_phone: customer.phone || '',
+      shipping_address: shipping.street_address || '',
+      shipping_city: shipping.city || '',
+      shipping_postal_code: shipping.postal_code || '',
+      shipping_country: shipping.country || '',
+      payment_method
+    });
+
+    const [orderResult] = await connection.execute(
+      `INSERT INTO orders
+        (order_number, user_id, email, status, currency, subtotal, shipping_amount, total_amount, notes)
+       VALUES (?, ?, ?, 'pending', 'EUR', ?, ?, ?, ?)`,
+      [orderNumber, userId, customer.email, subtotal, shipping_amount, total, notesBlob]
+    );
+    const orderId = orderResult.insertId;
+
+    // Insérer les articles
+    for (const item of items) {
+      await connection.execute(
+        `INSERT INTO order_items
+          (order_id, product_id, product_name, product_sku, quantity, unit_price, total_price)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderId,
+          item.product_id || item.id || 0,
+          item.name || 'Produit',
+          item.sku || '',
+          item.quantity || 1,
+          parseFloat(item.price) || 0,
+          (parseFloat(item.price) || 0) * (item.quantity || 1)
+        ]
+      );
+    }
+
+    // Créer l'entrée dans payments (statut 'pending' par défaut)
+    // Mapping méthodes checkout → ENUM payments
+    const methodMap = {
+      card: 'credit_card',
+      credit_card: 'credit_card',
+      paypal: 'paypal',
+      mobile: 'mobile_money',
+      mobile_money: 'mobile_money',
+      bank: 'bank_transfer',
+      bank_transfer: 'bank_transfer'
+    };
+    const dbMethod = methodMap[payment_method] || 'credit_card';
+    const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+    await connection.execute(
+      `INSERT INTO payments
+        (order_id, amount, currency, payment_method, payment_status, transaction_id, gateway_response, processed_at)
+       VALUES (?, ?, 'EUR', ?, 'completed', ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        orderId,
+        total,
+        dbMethod,
+        transactionId,
+        JSON.stringify({ method: payment_method, created_via: 'checkout_public' })
+      ]
+    );
+
+    await connection.commit();
+    await connection.end();
+
+    res.status(201).json({
+      success: true,
+      order: { id: orderId, order_number: orderNumber, status: 'pending' }
+    });
+  } catch (error) {
+    if (connection) {
+      try { await connection.rollback(); await connection.end(); } catch (e) {}
+    }
+    console.error('Erreur création commande publique:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: 'Impossible de créer la commande' });
   }
 });
 

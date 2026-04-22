@@ -20,9 +20,11 @@ import {
   TrendingDown
 } from 'lucide-react';
 import paymentService from '../../services/paymentService';
+import useNotificationStore from '../../services/notificationService';
 
 const PaymentManagement = () => {
   const navigate = useNavigate();
+  const addNotification = useNotificationStore(s => s.addNotification);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,6 +152,12 @@ const PaymentManagement = () => {
       await paymentService.processRefund(selectedPayment.id, refundData);
       await loadPayments();
       setShowRefundModal(false);
+      addNotification({
+        type: 'warning',
+        category: 'Paiement',
+        title: 'Remboursement traité',
+        message: `${refundData.amount} EUR remboursés sur paiement #${selectedPayment.id} (${refundData.reason})`
+      });
       setSelectedPayment(null);
       setRefundAmount('');
       setRefundReason('');
@@ -165,6 +173,12 @@ const PaymentManagement = () => {
     try {
       await paymentService.updatePaymentStatus(paymentId, { status: newStatus });
       await loadPayments();
+      addNotification({
+        type: 'info',
+        category: 'Paiement',
+        title: 'Statut paiement modifié',
+        message: `Paiement #${paymentId} → ${newStatus}`
+      });
       alert('Statut du paiement mis à jour avec succès!');
     } catch (error) {
       console.error('Erreur lors de la mise à jour du statut:', error);
@@ -179,8 +193,15 @@ const PaymentManagement = () => {
     }
 
     try {
+      const pay = payments.find(p => p.id === paymentId);
       await paymentService.deletePayment(paymentId);
       await loadPayments();
+      addNotification({
+        type: 'warning',
+        category: 'Paiement',
+        title: 'Paiement supprimé',
+        message: `Paiement #${paymentId}${pay ? ' (' + pay.amount + ' EUR)' : ''} supprimé`
+      });
       alert('Paiement supprimé avec succès!');
     } catch (error) {
       console.error('Erreur lors de la suppression du paiement:', error);

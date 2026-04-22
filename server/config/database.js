@@ -31,10 +31,27 @@ async function testConnection() {
 // Fonction pour exécuter des requêtes
 async function query(sql, params = []) {
   try {
-    const [rows] = await pool.execute(sql, params);
+    // Filtrer et valider les paramètres pour éviter les erreurs SQL
+    const filteredParams = params.map(param => {
+      if (param === undefined) {
+        return null;
+      }
+      // S'assurer que les nombres sont bien des nombres
+      if (typeof param === 'string' && !isNaN(param) && param.trim() !== '') {
+        return parseInt(param, 10);
+      }
+      return param;
+    });
+    
+    console.log('SQL:', sql);
+    console.log('Params:', filteredParams);
+    
+    const [rows] = await pool.execute(sql, filteredParams);
     return rows;
   } catch (error) {
     console.error('Erreur SQL:', error.message);
+    console.error('SQL Query:', sql);
+    console.error('Parameters:', params);
     throw error;
   }
 }

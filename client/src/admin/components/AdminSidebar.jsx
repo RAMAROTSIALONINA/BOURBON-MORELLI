@@ -8,6 +8,7 @@ import {
   CreditCard,
   BarChart3,
   FileText,
+  History,
   Settings,
   LogOut,
   Menu,
@@ -94,6 +95,12 @@ const AdminSidebar = () => {
       href: '/admin/reports',
       icon: FileText,
       current: location.pathname.startsWith('/admin/reports')
+    },
+    {
+      name: 'Historique',
+      href: '/admin/history',
+      icon: History,
+      current: location.pathname.startsWith('/admin/history')
     },
     {
       name: 'Paramètres',
@@ -202,7 +209,7 @@ const AdminSidebar = () => {
                   {adminUser?.name || 'Admin'}
                 </p>
                 <p className="text-xs text-gray-400 truncate">
-                  {adminUser?.email || 'admin@bourbonmorelli.com'}
+                  {adminUser?.email || 'admin@example.com'}
                 </p>
               </div>
             )}

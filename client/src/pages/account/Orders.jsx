@@ -1,16 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Package, Truck, CheckCircle, XCircle, Clock, Eye, Download } from 'lucide-react';
-import { customerOrderService } from '../../services/orderService';
+import axios from 'axios';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import authService from '../../services/authService';
-import productDataService from '../../services/productDataService';
+
+const BACKEND_URL = 'http://localhost:5003';
+
+// Transforme les chemins d'images relatifs en URL absolues
+const resolveImageUrl = (url) => {
+  if (!url) return '/images/placeholder-product.jpg';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
-  // Commandes simulées pour le fallback
+  // Commandes simulées pour le fallback (non utilisées si l'API répond)
+  // eslint-disable-next-line no-unused-vars
   const getMockOrders = () => [
     {
       id: 'CMD-2024-001',
@@ -90,28 +102,34 @@ const Orders = () => {
       const userInfo = authService.getUserInfo();
       if (!userInfo || !userInfo.email) {
         console.log('Aucun utilisateur connecté');
+        setOrders([]);
         setLoading(false);
         return;
       }
 
-      // Charger les commandes du client
-      const response = await customerOrderService.getCustomerOrders(userInfo.email);
-      
-      if (response.success) {
-        setOrders(response.orders);
+      // Charger les commandes du client depuis le backend
+      const response = await axios.get(
+        `${BACKEND_URL}/api/orders/by-email/${encodeURIComponent(userInfo.email)}`
+      );
+
+      if (response.data?.success && Array.isArray(response.data.orders)) {
+        // Normaliser les URL d'images
+        const ordersData = response.data.orders.map(order => ({
+          ...order,
+          items: (order.items || []).map(it => ({ ...it, image: resolveImageUrl(it.image) }))
+        }));
+        setOrders(ordersData);
+        console.log(`✅ ${ordersData.length} commande(s) chargée(s) pour ${userInfo.email}`);
       } else {
-        console.error('Erreur lors du chargement des commandes:', response.message);
-        // En cas d'erreur, afficher les commandes simulées
-        setOrders(getMockOrders());
+        setOrders([]);
       }
     } catch (error) {
       console.error('Erreur chargement commandes:', error);
-      // En cas d'erreur, afficher les commandes simulées
-      setOrders(getMockOrders());
+      setOrders([]);
     } finally {
       setLoading(false);
     }
-  }, [customerOrderService]);
+  }, []);
 
   useEffect(() => {
     loadOrders();
@@ -179,8 +197,103 @@ const Orders = () => {
   };
 
   const handleDownloadInvoice = (order) => {
-    // Simuler le téléchargement de facture
-    alert(`Téléchargement de la facture pour la commande ${order.id}\n\nLa facture sera générée et téléchargée automatiquement.`);
+    try {
+      const doc = new jsPDF();
+      const userInfo = authService.getUserInfo() || {};
+
+      // En-tête
+      doc.setFontSize(22);
+      doc.setTextColor(23, 23, 23);
+      doc.text('BOURBON MORELLI', 14, 20);
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text('Facture officielle', 14, 27);
+
+      // Infos commande (droite)
+      doc.setFontSize(10);
+      doc.setTextColor(23, 23, 23);
+      doc.text(`Facture N° : ${order.order_number || order.id}`, 140, 20);
+      doc.text(`Date : ${formatDate(order.date)}`, 140, 26);
+      doc.text(`Statut : ${getStatusInfo(order.status).label}`, 140, 32);
+
+      // Ligne séparatrice
+      doc.setDrawColor(230);
+      doc.line(14, 38, 196, 38);
+
+      // Client
+      doc.setFontSize(11);
+      doc.setTextColor(23, 23, 23);
+      doc.text('Facturé à :', 14, 46);
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      const customerLines = [
+        userInfo.name || userInfo.email || 'Client',
+        userInfo.email || order.customer_email || '',
+        order.shipping?.address || '',
+        `${order.shipping?.postal_code || ''} ${order.shipping?.city || ''}`.trim(),
+        order.shipping?.country || ''
+      ].filter(Boolean);
+      customerLines.forEach((line, i) => doc.text(line, 14, 52 + i * 5));
+
+      // Paiement (droite)
+      doc.setFontSize(11);
+      doc.setTextColor(23, 23, 23);
+      doc.text('Paiement :', 140, 46);
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Méthode : ${order.payment?.method || 'N/A'}`, 140, 52);
+      doc.text(`Statut : ${order.payment?.status === 'paid' ? 'Payé' : 'En attente'}`, 140, 57);
+      if (order.payment?.transactionId) {
+        doc.text(`Réf : ${order.payment.transactionId}`, 140, 62);
+      }
+
+      // Tableau des articles
+      const tableY = 52 + customerLines.length * 5 + 8;
+      autoTable(doc, {
+        startY: tableY,
+        head: [['Article', 'Quantité', 'Prix unitaire', 'Total']],
+        body: order.items.map(it => [
+          it.name,
+          it.quantity,
+          formatPrice(it.price),
+          formatPrice(it.price * it.quantity)
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [23, 23, 23], textColor: 255 },
+        styles: { fontSize: 10 }
+      });
+
+      // Totaux
+      const finalY = doc.lastAutoTable.finalY + 10;
+      const subtotal = order.subtotal || order.items.reduce((s, it) => s + it.price * it.quantity, 0);
+      const shippingCost = order.shipping?.cost || 0;
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text('Sous-total :', 140, finalY);
+      doc.text(formatPrice(subtotal), 196, finalY, { align: 'right' });
+      doc.text('Livraison :', 140, finalY + 6);
+      doc.text(shippingCost === 0 ? 'Gratuite' : formatPrice(shippingCost), 196, finalY + 6, { align: 'right' });
+
+      doc.setDrawColor(200);
+      doc.line(140, finalY + 10, 196, finalY + 10);
+
+      doc.setFontSize(13);
+      doc.setTextColor(23, 23, 23);
+      doc.text('TOTAL :', 140, finalY + 18);
+      doc.text(formatPrice(order.total), 196, finalY + 18, { align: 'right' });
+
+      // Pied
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text('Merci pour votre confiance — BOURBON MORELLI', 105, 285, { align: 'center' });
+
+      // Télécharger
+      doc.save(`Facture-${order.order_number || order.id}.pdf`);
+    } catch (err) {
+      console.error('Erreur génération facture:', err);
+      alert('Impossible de générer la facture PDF.');
+    }
   };
 
   if (loading) {

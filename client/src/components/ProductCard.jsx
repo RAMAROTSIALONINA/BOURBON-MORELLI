@@ -4,8 +4,19 @@ import ImagePlaceholder from './ImagePlaceholder';
 import { Link } from 'react-router-dom';
 import productDataService from '../services/productDataService';
 
+// Base URL du backend (pour servir les images en bypassant le proxy React)
+const BACKEND_URL = 'http://localhost:5003';
+
+// Transforme "/uploads/products/xxx.png" → "http://localhost:5003/uploads/products/xxx.png"
+// Laisse inchangé les URLs absolues (http://...) et les chemins /images/... du seed
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
+
 const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
-  const [imageError, setImageError] = useState(false);
   const [currentImage, setCurrentImage] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const [isInWishlist, setIsInWishlist] = useState(false);
@@ -16,19 +27,8 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
     setIsInWishlist(wishlist.some(item => item.id === product.id));
   }, [product.id]);
 
-  const handleImageError = () => {
-    if (!imageError) {
-      setImageError(true);
-    }
-  };
-
-  // const getImageSrc = () => {
-  //   if (imageError) {
-  //     // Utiliser une vraie image comme fallback
-  //     return '/images/BOURBON MORELLI.png';
-  //   }
-  //   return product.images?.[currentImage] || '/images/BOURBON MORELLI.png';
-  // };
+  // Au survol : afficher automatiquement la 2e image si dispo, sinon garder la 1ère
+  const displayedImageIndex = isHovered && product.images?.length > 1 ? 1 : currentImage;
 
   const handleAddToCart = (e) => {
     e.preventDefault();
@@ -86,39 +86,49 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
     >
       <Link to={`/product/${product.slug}`} className="block">
         {/* Product images */}
-        <div className="product-image-container relative h-80 overflow-hidden bg-neutral-50">
-          {/* Badge */}
+        <div className="product-image-container relative h-80 overflow-hidden bg-neutral-100">
+          {/* Badges en haut */}
           {discountPercentage && (
-            <div className="absolute top-4 left-4 z-10 bg-red-500 text-white px-2 py-1 rounded-md text-sm font-semibold">
+            <div className="absolute top-3 left-3 z-20 bg-red-500 text-white px-2.5 py-1 rounded-md text-xs font-semibold shadow-md">
               -{discountPercentage}%
             </div>
           )}
-          
+
           {product.featured && (
-            <div className="absolute top-4 right-4 z-10 bg-primary-500 text-white px-2 py-1 rounded-md text-sm font-semibold">
+            <div className="absolute top-3 right-3 z-20 bg-primary-500 text-white px-2.5 py-1 rounded-md text-xs font-semibold shadow-md">
               Nouveau
             </div>
           )}
 
-          {/* Main image */}
-          {product.images?.[currentImage] ? (
+          {/* Zone images : stack d'images avec fondu au survol */}
+          {product.images && product.images.length > 0 ? (
+            <>
+              {product.images.slice(0, 5).map((image, index) => (
                 <img
-                  src={product.images[currentImage]}
+                  key={index}
+                  src={resolveImageUrl(image)}
                   alt={product.name}
-                  className="w-full h-64 object-cover"
-                  onError={handleImageError}
+                  loading="lazy"
+                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+                    displayedImageIndex === index ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = '/images/BOURBON MORELLI.png';
+                  }}
                 />
-              ) : (
-                <ImagePlaceholder 
-                  className="w-full h-64" 
-                  alt={product.name}
-                  showLogo={false}
-                  style={{ display: product.images?.[currentImage] ? 'none' : 'flex' }}
-                />
-              )}
+              ))}
+            </>
+          ) : (
+            <ImagePlaceholder
+              className="absolute inset-0 w-full h-full"
+              alt={product.name}
+              showLogo={false}
+            />
+          )}
 
           {/* Hover overlay with actions */}
-          <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-300 ${
+          <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-300 z-10 ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}>
             <div className="flex space-x-2">
@@ -129,19 +139,19 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
               >
                 <ShoppingCart className="w-5 h-5" />
               </button>
-              
+
               <button
                 onClick={handleAddToWishlist}
                 className={`p-3 rounded-full transition-colors duration-300 transform hover:scale-110 ${
-                  isInWishlist 
-                    ? 'bg-red-500 text-white' 
+                  isInWishlist
+                    ? 'bg-red-500 text-white'
                     : 'bg-white text-neutral-900 hover:bg-red-500 hover:text-white'
                 }`}
                 title="Ajouter aux favoris"
               >
                 <Heart className={`w-5 h-5 ${isInWishlist ? 'fill-current' : ''}`} />
               </button>
-              
+
               <button
                 className="bg-white text-neutral-900 p-3 rounded-full hover:bg-primary-500 hover:text-white transition-colors duration-300 transform hover:scale-110"
                 title="Aperçu rapide"
@@ -151,17 +161,24 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
             </div>
           </div>
 
-          {/* Thumbnail images */}
+          {/* Pagination dots (en bas, cliquables) */}
           {product.images && product.images.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-              <div className="flex space-x-1 overflow-x-auto">
-                {product.images.slice(0, 3).map((image, index) => (
+            <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 z-20">
+              <div className="flex items-center space-x-1.5 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-full">
+                {product.images.slice(0, 5).map((_, index) => (
                   <button
                     key={index}
-                    onClick={() => setCurrentImage(index)}
-                    className={`flex-shrink-0 w-2 h-2 rounded-full transition-colors ${
-                      currentImage === index ? 'bg-primary-500' : 'bg-neutral-300'
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCurrentImage(index);
+                    }}
+                    className={`transition-all rounded-full ${
+                      currentImage === index
+                        ? 'w-4 h-1.5 bg-primary-500'
+                        : 'w-1.5 h-1.5 bg-neutral-400 hover:bg-neutral-600'
                     }`}
+                    aria-label={`Voir vue ${index + 1}`}
                   />
                 ))}
               </div>
