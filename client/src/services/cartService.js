@@ -32,12 +32,23 @@ class CartService {
   }
 
   // Ajouter un produit au panier
-  addToCart(product) {
+  // Retourne { success, reason } — reason: 'stock_exceeded' si dépassement
+  addToCart(product, quantityToAdd = 1) {
     const cart = this.loadCart();
     const existingItem = cart.find(item => item.id === product.id);
-    
+
+    // Stock maximum disponible (0 = pas de limite connue → autoriser)
+    const maxStock = product.stock_quantity ?? product.stock ?? product.inventory_quantity ?? 0;
+    const hasLimit = maxStock > 0;
+
     if (existingItem) {
-      existingItem.quantity += 1;
+      const newQty = existingItem.quantity + quantityToAdd;
+      if (hasLimit && newQty > maxStock) {
+        return { success: false, reason: 'stock_exceeded', available: maxStock, current: existingItem.quantity };
+      }
+      existingItem.quantity = newQty;
+      // Rafraîchir le stock stocké si fourni
+      if (maxStock > 0) existingItem.stock_quantity = maxStock;
     } else {
       cart.push({
         id: product.id,
@@ -46,28 +57,35 @@ class CartService {
         image: product.image_url || product.images?.[0] || '/images/placeholder-product.jpg',
         image_url: product.image_url || product.images?.[0] || '/images/placeholder-product.jpg',
         images: product.images || [product.image_url] || ['/images/placeholder-product.jpg'],
-        quantity: 1,
-        slug: product.slug
+        quantity: quantityToAdd,
+        slug: product.slug,
+        stock_quantity: maxStock  // 0 = non limité
       });
     }
-    
+
     const success = this.saveCart(cart);
     if (success) {
-      console.log(`"${product.name}" ajouté au panier`);
+      console.log(`"${product.name}" ajouté au panier (x${quantityToAdd})`);
       this.notifyCartUpdate();
     }
-    
-    return success;
+
+    return { success };
   }
 
   // Mettre à jour la quantité d'un produit
+  // Retourne false si dépassement du stock ou quantité < 1
   updateQuantity(productId, newQuantity) {
     if (newQuantity < 1) return false;
-    
+
     const cart = this.loadCart();
     const item = cart.find(item => item.id === productId);
-    
+
     if (item) {
+      const maxStock = item.stock_quantity ?? 0;
+      if (maxStock > 0 && newQuantity > maxStock) {
+        console.warn(`Quantité limitée au stock disponible : ${maxStock}`);
+        return false;
+      }
       item.quantity = newQuantity;
       const success = this.saveCart(cart);
       if (success) {
@@ -76,7 +94,7 @@ class CartService {
       }
       return success;
     }
-    
+
     return false;
   }
 

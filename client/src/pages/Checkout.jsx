@@ -1,10 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CreditCard, Truck, Shield, ArrowLeft, Check, Smartphone, Wallet } from 'lucide-react';
 import cartService from '../services/cartService';
 import axios from 'axios';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import StripePaymentSection from '../components/StripePaymentSection';
+
+const stripePublicKey = process.env.REACT_APP_STRIPE_PUBLIC_KEY;
+const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
 const BACKEND_URL = 'http://localhost:5003';
+
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
 
 const Checkout = () => {
   const navigate = useNavigate();
@@ -150,6 +164,12 @@ const Checkout = () => {
       setLoadingCountries(false);
     }
   };
+  const stripeRef = useRef(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [stripeClientSecret, setStripeClientSecret] = useState(null);
+  const [pendingOrderId, setPendingOrderId] = useState(null);
+  const [stripeLoading, setStripeLoading] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
@@ -168,21 +188,10 @@ const Checkout = () => {
       email: ''
     },
     payment: {
-      method: 'card',
-      card_type: 'visa',
-      card_holder: '',
-      card_number: '',
-      card_expiry: '',
-      cvv: '',
-      save_card: false,
-      paypal_email: '',
-      paypal_payment_id: '',
-      paypal_payer_id: '',
-      paypal_verified: false,
+      method: 'stripe',
       mobile_operator: 'mvol',
       mobile_phone: '',
-      mobile_name: '',
-      mobile_code: ''
+      mobile_name: ''
     }
   });
 
@@ -224,6 +233,24 @@ const Checkout = () => {
       }
     };
 
+    // Pré-remplir le formulaire depuis le compte connecté
+    try {
+      const raw = localStorage.getItem('userInfo');
+      if (raw) {
+        const u = JSON.parse(raw);
+        setFormData(prev => ({
+          ...prev,
+          shipping: {
+            ...prev.shipping,
+            first_name: prev.shipping.first_name || u.firstName || u.first_name || '',
+            last_name:  prev.shipping.last_name  || u.lastName  || u.last_name  || '',
+            email:      prev.shipping.email      || u.email     || '',
+            phone:      prev.shipping.phone      || u.phone     || ''
+          }
+        }));
+      }
+    } catch (e) { /* ignore */ }
+
     // Charger les données des pays et le panier en parallèle
     fetchCountriesData();
     loadCart();
@@ -231,21 +258,6 @@ const Checkout = () => {
 
   const handleInputChange = (section, field, value) => {
     let processedValue = value;
-    
-    // Formatage automatique pour le numéro de carte
-    if (section === 'payment' && field === 'card_number') {
-      processedValue = formatCardNumber(value);
-      
-      // Détecter automatiquement le type de carte
-      const cardType = detectCardType(processedValue.replace(/\s/g, ''));
-      setFormData(prev => ({
-        ...prev,
-        payment: {
-          ...prev.payment,
-          card_type: cardType
-        }
-      }));
-    }
     
     // Formatage automatique et détection du préfixe pour le numéro de téléphone Mobile Money
     if (section === 'payment' && field === 'mobile_phone') {
@@ -382,69 +394,6 @@ const Checkout = () => {
     validateField(section, field, processedValue);
   };
 
-  // Fonction pour détecter le type de carte
-  const detectCardType = (cardNumber) => {
-    const cleanedNumber = cardNumber.replace(/\s/g, '');
-    
-    // Visa: commence par 4, 13 ou 16 chiffres
-    if (/^4/.test(cleanedNumber) && (cleanedNumber.length === 13 || cleanedNumber.length === 16)) {
-      return 'visa';
-    }
-    
-    // Mastercard: commence par 51-55, 16 chiffres
-    if (/^5[1-5]/.test(cleanedNumber) && cleanedNumber.length === 16) {
-      return 'mastercard';
-    }
-    
-    // American Express: commence par 34 ou 37, 15 chiffres
-    if (/^3[47]/.test(cleanedNumber) && cleanedNumber.length === 15) {
-      return 'amex';
-    }
-    
-    return null;
-  };
-
-  // Fonction pour formater le numéro de carte
-  const formatCardNumber = (value) => {
-    const cleanedValue = value.replace(/\s/g, '');
-    const cardType = detectCardType(cleanedValue);
-    
-    // Formatage selon le type de carte
-    if (cardType === 'amex') {
-      // American Express: 4-6-5 (ex: 3782 822463 10005)
-      return cleanedValue.replace(/(\d{4})(\d{6})(\d{0,5})/, '$1 $2 $3').trim();
-    } else {
-      // Visa/Mastercard: 4-4-4-4 (ex: 4242 4242 4242 4242)
-      return cleanedValue.replace(/(\d{4})(\d{4})(\d{4})(\d{0,4})/, '$1 $2 $3 $4').trim();
-    }
-  };
-
-  // Fonction pour obtenir le logo de la carte
-  const getCardLogo = (cardType) => {
-    switch (cardType) {
-      case 'visa':
-        return (
-          <div className="w-8 h-5 bg-blue-600 rounded flex items-center justify-center text-white text-xs font-bold">
-            VISA
-          </div>
-        );
-      case 'mastercard':
-        return (
-          <div className="w-8 h-5 bg-red-600 rounded flex items-center justify-center text-white text-xs font-bold">
-            MC
-          </div>
-        );
-      case 'amex':
-        return (
-          <div className="w-8 h-5 bg-green-600 rounded flex items-center justify-center text-white text-xs font-bold">
-            AMEX
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
   const validateField = (section, field, value) => {
     let error = '';
     
@@ -501,43 +450,6 @@ const Checkout = () => {
       }
     } else if (section === 'payment') {
       switch (field) {
-        case 'card_holder':
-          if (formData.payment.method === 'card' && (!value || value.trim().length < 3)) {
-            error = 'Le nom du titulaire doit contenir au moins 3 caractères';
-          }
-          break;
-        case 'card_number':
-          if (formData.payment.method === 'card') {
-            const cleanedNumber = value.replace(/\s/g, '');
-            const cardType = detectCardType(cleanedNumber);
-            
-            if (!cleanedNumber) {
-              error = 'Le numéro de carte est requis';
-            } else if (!cardType) {
-              error = 'Type de carte non reconnu (Visa, Mastercard ou American Express)';
-            } else {
-              // Validation spécifique selon le type
-              if (cardType === 'amex' && cleanedNumber.length !== 15) {
-                error = 'American Express doit contenir 15 chiffres';
-              } else if (cardType !== 'amex' && (cleanedNumber.length !== 13 && cleanedNumber.length !== 16)) {
-                error = 'Visa/Mastercard doit contenir 13 ou 16 chiffres';
-              }
-            }
-          }
-          break;
-        case 'card_expiry':
-          if (formData.payment.method === 'card' && (!value || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(value))) {
-            error = 'La date d\'expiration doit être au format MM/AA';
-          }
-          break;
-        case 'cvv':
-          if (formData.payment.method === 'card' && (!value || !/^\d{3,4}$/.test(value))) {
-            error = 'Le CVV doit contenir 3 ou 4 chiffres';
-          }
-          break;
-        case 'paypal':
-        // Email PayPal est optionnel - pas de validation requise
-        break;
         case 'mobile_phone':
           if (formData.payment.method === 'mobile') {
             const cleanPhone = value.replace(/\s/g, '');
@@ -566,6 +478,89 @@ const Checkout = () => {
       }
     }));
   };
+
+  // Crée l'ordre + le PaymentIntent Stripe dès que l'utilisateur arrive à l'étape 2
+  useEffect(() => {
+    if (currentStep === 2 && stripePromise && !stripeClientSecret && !stripeLoading && cartItems.length > 0) {
+      const createOrderAndIntent = async () => {
+        setStripeLoading(true);
+        setPaymentError('');
+        try {
+          const payload = {
+            customer: {
+              email: formData.shipping.email,
+              first_name: formData.shipping.first_name,
+              last_name: formData.shipping.last_name,
+              phone: formData.shipping.phone
+            },
+            shipping: {
+              street_address: formData.shipping.street_address,
+              city: formData.shipping.city,
+              postal_code: formData.shipping.postal_code,
+              country: formData.shipping.country
+            },
+            items: cartItems.map(it => ({
+              product_id: it.id || it.product_id,
+              name: it.name,
+              sku: it.sku || '',
+              price: parseFloat(it.price) || 0,
+              quantity: it.quantity || 1
+            })),
+            subtotal: totals.subtotal,
+            shipping_amount: totals.shipping || 0,
+            total: totals.total,
+            payment_method: 'stripe'
+          };
+          const orderRes = await axios.post(`${BACKEND_URL}/api/orders/public`, payload);
+          const orderId = orderRes.data?.order?.id;
+          setPendingOrderId(orderId);
+
+          const intentRes = await axios.post(`${BACKEND_URL}/api/payments/stripe/create-intent-public`, {
+            order_id: orderId,
+            email: formData.shipping.email,
+            currency: 'EUR'
+          });
+          setStripeClientSecret(intentRes.data.client_secret);
+        } catch (err) {
+          // Erreur stock côté serveur (409)
+          if (err.response?.status === 409) {
+            setPaymentError(err.response.data?.message || 'Stock insuffisant pour un ou plusieurs articles.');
+          } else {
+            setPaymentError('Impossible d\'initialiser le paiement. Veuillez réessayer.');
+          }
+        } finally {
+          setStripeLoading(false);
+        }
+      };
+      createOrderAndIntent();
+    }
+  }, [currentStep]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const buildOrderData = (orderId, method, extraDetails = {}) => ({
+    id: orderId || ('ORD-' + Date.now()),
+    customerName: `${formData.shipping.first_name} ${formData.shipping.last_name}`,
+    items: cartItems.map(item => ({
+      ...item,
+      price: parseFloat(item.price) || 0,
+      quantity: item.quantity || 1,
+      image: item.image || item.image_url || (item.images && item.images[0]) || '/images/placeholder-product.jpg'
+    })),
+    subtotal: totals.subtotal,
+    shipping: {
+      firstName: formData.shipping.first_name,
+      lastName: formData.shipping.last_name,
+      streetAddress: formData.shipping.street_address,
+      postalCode: formData.shipping.postal_code,
+      city: formData.shipping.city,
+      country: formData.shipping.country,
+      email: formData.shipping.email,
+      phone: formData.shipping.phone
+    },
+    shippingCost: totals.shipping || 0,
+    total: totals.total,
+    payment: { method, status: 'paid', details: extraDetails },
+    created_at: new Date().toISOString()
+  });
 
   const validateShippingStep = () => {
     const shipping = formData.shipping;
@@ -626,109 +621,6 @@ const Checkout = () => {
     return true;
   };
 
-  const handlePayPalPayment = () => {
-    // Simuler une redirection vers PayPal
-    // En production, ce serait une vraie redirection vers l'API PayPal
-    
-    // Afficher une confirmation avant la redirection
-    const confirmMessage = `Vous allez être redirigé vers PayPal pour payer ${formatPrice(totals.total)}.\n\n` +
-      `Montant: ${formatPrice(totals.total)}\n` +
-      `Articles: ${cartItems.length} article(s)\n\n` +
-      `Cliquez sur OK pour continuer vers PayPal.`;
-    
-    if (window.confirm(confirmMessage)) {
-      // Simuler la redirection vers PayPal
-      // En production: window.location.href = 'https://www.paypal.com/cgi-bin/webscr?cmd=_express-checkout&token=...';
-      
-      // Pour la démo, on simule le succès du paiement PayPal
-      setTimeout(() => {
-        // Simuler une réponse PayPal réussie
-        const paypalResponse = {
-          success: true,
-          paymentId: 'PAYPAL_' + Date.now(),
-          payerId: 'PAYER_' + Math.random().toString(36).substr(2, 9),
-          email: formData.payment.paypal_email || formData.shipping.email || 'customer@example.com',
-          amount: totals.total
-        };  
-        
-        // Mettre à jour les détails du paiement PayPal
-        setFormData(prev => ({
-          ...prev,
-          payment: {
-            ...prev.payment,
-            paypal_payment_id: paypalResponse.paymentId,
-            paypal_payer_id: paypalResponse.payerId,
-            paypal_verified: true
-          }
-        }));
-        
-        // Passer à l'étape de confirmation
-        setCurrentStep(3);
-        
-        // Afficher un message de succès
-        alert(`Paiement PayPal accepté!\n\nID Payment: ${paypalResponse.paymentId}\nMontant: ${formatPrice(paypalResponse.amount)}\nEmail: ${paypalResponse.email}`);
-      }, 2000); // Simuler 2 secondes de redirection
-      
-      // Message de chargement pendant la "redirection"
-      alert('Redirection vers PayPal en cours...\n\nDans une vraie application, vous seriez redirigé vers le site PayPal sécurisé.');
-    }
-  };
-
-  const handleMobilePayment = () => {
-    // Afficher une confirmation avant le paiement
-    const operatorName = formData.payment.mobile_operator === 'mvol' ? 'MVola' : 
-                      formData.payment.mobile_operator === 'orange' ? 'Orange' : 'Airtel';
-    
-    const confirmMessage = `Vous allez payer ${formatPrice(totals.total)} avec ${operatorName}.\n\n` +
-      `Montant: ${formatPrice(totals.total)}\n` +
-      `Opérateur: ${operatorName}\n` +
-      `Téléphone: ${formData.payment.mobile_phone}\n` +
-      `Nom: ${formData.payment.mobile_name}\n` +
-      `Articles: ${cartItems.length} article(s)\n\n` +
-      `Cliquez sur OK pour confirmer le paiement.`;
-    
-    if (window.confirm(confirmMessage)) {
-      // Simuler le traitement du paiement Mobile Money
-      setTimeout(() => {
-        // Simuler une réponse Mobile Money réussie
-        const mobileResponse = {
-          success: true,
-          transactionId: 'MOBILE_' + Date.now(),
-          operator: operatorName,
-          phone: formData.payment.mobile_phone,
-          name: formData.payment.mobile_name,
-          amount: totals.total,
-          reference: Math.random().toString(36).substr(2, 9).toUpperCase()
-        };
-        
-        // Mettre à jour les détails du paiement Mobile Money
-        setFormData(prev => ({
-          ...prev,
-          payment: {
-            ...prev.payment,
-            mobile_transaction_id: mobileResponse.transactionId,
-            mobile_operator: operatorName,
-            mobile_verified: true
-          }
-        }));
-        
-        // Passer à l'étape de confirmation
-        setCurrentStep(3);
-        
-        // Afficher un message de succès
-        alert(`Paiement ${operatorName} accepté!\n\n` +
-          `Transaction: ${mobileResponse.transactionId}\n` +
-          `Opérateur: ${mobileResponse.operator}\n` +
-          `Montant: ${formatPrice(mobileResponse.amount)}\n` +
-          `Téléphone: ${mobileResponse.phone}\n` +
-          `Référence: ${mobileResponse.reference}`);
-      }, 1500); // Simuler 1.5 secondes de traitement
-      
-      // Message de chargement pendant le traitement
-      alert(`Traitement du paiement ${operatorName} en cours...\n\n` +
-        `Dans une vraie application, vous recevriez une notification de confirmation sur votre téléphone.`);
-    }
-  };
 
   const validatePaymentStep = () => {
     const payment = formData.payment;
@@ -739,34 +631,14 @@ const Checkout = () => {
     }
     
     switch (payment.method) {
-      case 'card':
-        if (!payment.card_type) {
-          errors.push('Veuillez choisir le type de carte');
-        }
-        if (!payment.card_holder || payment.card_holder.trim().length < 3) {
-          errors.push('Le nom du titulaire doit contenir au moins 3 caractères');
-        }
-        if (!payment.card_number || !/^\d{13,19}$/.test(payment.card_number.replace(/\s/g, ''))) {
-          errors.push('Le numéro de carte doit contenir 13 à 19 chiffres');
-        }
-        if (!payment.card_expiry || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(payment.card_expiry)) {
-          errors.push('La date d\'expiration doit être au format MM/AA');
-        }
-        if (!payment.cvv || !/^\d{3,4}$/.test(payment.cvv)) {
-          errors.push('Le CVV doit contenir 3 ou 4 chiffres');
-        }
+      case 'stripe':
+        // PaymentElement (carte / PayPal) — validation gérée par Stripe
         break;
-        
-      case 'paypal':
-        // PayPal ne nécessite pas de validation locale
-        // Le processus PayPal gère la validation
-        break;
-        
+
       case 'mobile':
         if (!payment.mobile_operator) {
           errors.push('Veuillez choisir un opérateur Mobile Money');
         }
-        // Nettoyer le numéro pour compter seulement les chiffres
         const cleanPhone = payment.mobile_phone.replace(/\s/g, '');
         if (!payment.mobile_phone || !/^[0-9\s]{10,12}$/.test(payment.mobile_phone)) {
           errors.push('Le numéro de téléphone doit contenir exactement 10 chiffres (ex: 034 650 345 4)');
@@ -777,36 +649,68 @@ const Checkout = () => {
           errors.push('Le nom complet doit contenir au moins 3 caractères');
         }
         break;
+
       default:
-        errors.push('Méthode de paiement non reconnue');
         break;
     }
     
     if (errors.length > 0) {
-      alert('ERREURS FORMULAIRE PAIEMENT:\n\n' + errors.map((error, index) => `${index + 1}. ${error}`).join('\n'));
+      setPaymentError(errors[0]);
       return false;
     }
     
     return true;
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = async () => {
     let isValid = false;
-    
+
     switch (currentStep) {
       case 1:
         isValid = validateShippingStep();
         break;
       case 2:
         isValid = validatePaymentStep();
+        if (isValid && formData.payment.method !== 'mobile') {
+          // Paiement Stripe (carte / PayPal) — confirmer directement ici
+          setPaymentError('');
+          setPaymentProcessing(true);
+          try {
+            const returnUrl = `${window.location.origin}/order-confirmation`;
+            // Sauvegarde avant redirect PayPal (location.state ne survit pas aux redirects)
+            sessionStorage.setItem('pendingOrder', JSON.stringify(buildOrderData(pendingOrderId, 'stripe')));
+            const paymentIntent = await stripeRef.current.confirmPayment(returnUrl);
+            // paymentIntent non-null = carte payée inline (pas de redirect)
+            if (paymentIntent) {
+              // Synchroniser le statut et la méthode réelle dans payment_transactions
+              try {
+                await axios.post(`${BACKEND_URL}/api/payments/stripe/complete-transaction`, {
+                  payment_intent_id: paymentIntent.id,
+                  order_id: pendingOrderId
+                });
+              } catch (e) { /* non-bloquant */ }
+
+              sessionStorage.removeItem('pendingOrder');
+              const orderData = buildOrderData(pendingOrderId, 'stripe');
+              cartService.clearCart();
+              navigate('/order-confirmation', { state: { order: orderData, paymentMethod: 'stripe' } });
+            }
+            // Si null = redirect PayPal géré automatiquement par Stripe
+          } catch (err) {
+            setPaymentError(err.message || 'Le paiement a échoué. Veuillez réessayer.');
+          } finally {
+            setPaymentProcessing(false);
+          }
+          return;
+        }
         break;
       case 3:
-        isValid = true; // Étape finale, toujours valide
+        isValid = true;
         break;
       default:
         isValid = false;
     }
-    
+
     if (isValid && currentStep < 3) {
       setCurrentStep(currentStep + 1);
     }
@@ -818,116 +722,43 @@ const Checkout = () => {
     }
   };
 
+  // processPayment : uniquement pour Mobile Money (étape 3)
   const processPayment = async () => {
-    alert('TEST: Traitement du paiement en cours...\n\nMéthode: ' + formData.payment.method.toUpperCase() + '\nMontant: ' + formatPrice(totals.total));
-
-    // Enregistrer la commande côté backend
-    let savedOrderId = 'ORD-' + Date.now();
+    setPaymentError('');
+    setPaymentProcessing(true);
+    let savedOrderId = null;
     try {
       const payload = {
-        customer: {
-          email: formData.shipping.email,
-          first_name: formData.shipping.first_name,
-          last_name: formData.shipping.last_name,
-          phone: formData.shipping.phone
-        },
-        shipping: {
-          street_address: formData.shipping.street_address,
-          city: formData.shipping.city,
-          postal_code: formData.shipping.postal_code,
-          country: formData.shipping.country
-        },
-        items: cartItems.map(it => ({
-          product_id: it.id || it.product_id,
-          name: it.name,
-          sku: it.sku || '',
-          price: parseFloat(it.price) || 0,
-          quantity: it.quantity || 1
-        })),
+        customer: { email: formData.shipping.email, first_name: formData.shipping.first_name, last_name: formData.shipping.last_name, phone: formData.shipping.phone },
+        shipping: { street_address: formData.shipping.street_address, city: formData.shipping.city, postal_code: formData.shipping.postal_code, country: formData.shipping.country },
+        items: cartItems.map(it => ({ product_id: it.id || it.product_id, name: it.name, sku: it.sku || '', price: parseFloat(it.price) || 0, quantity: it.quantity || 1 })),
         subtotal: totals.subtotal,
         shipping_amount: totals.shipping || 0,
         total: totals.total,
-        payment_method: formData.payment.method
+        payment_method: 'mobile'
       };
       const response = await axios.post(`${BACKEND_URL}/api/orders/public`, payload);
-      if (response.data?.order?.id) {
-        savedOrderId = response.data.order.id;
-        console.log('✅ Commande enregistrée #', savedOrderId);
-      }
+      if (response.data?.order?.id) savedOrderId = response.data.order.id;
     } catch (err) {
-      console.error('❌ Erreur enregistrement commande:', err);
-      alert('Attention : la commande n\'a pas pu être enregistrée côté serveur. Contactez le support.');
-    }
-
-    setTimeout(() => {
-      // Construire les détails de paiement selon la méthode (exigé par OrderConfirmation)
-      const method = formData.payment.method;
-      let paymentDetails = {};
-
-      if (method === 'card') {
-        paymentDetails = {
-          cardNumber: formData.payment.card_number,
-          expiry: formData.payment.card_expiry,
-          cvv: formData.payment.cvv,
-          holder: formData.payment.card_holder,
-          type: formData.payment.card_type
-        };
-      } else if (method === 'paypal') {
-        paymentDetails = {
-          email: formData.payment.paypal_email || formData.shipping.email,
-          name: `${formData.shipping.first_name} ${formData.shipping.last_name}`.trim(),
-          paymentId: formData.payment.paypal_payment_id,
-          payerId: formData.payment.paypal_payer_id
-        };
-      } else if (method === 'mobile') {
-        paymentDetails = {
-          operator: formData.payment.mobile_operator,
-          phone: formData.payment.mobile_phone,
-          holderName: formData.payment.mobile_name
-        };
+      if (err.response?.status === 409) {
+        setPaymentError(err.response.data?.message || 'Stock insuffisant pour un ou plusieurs articles.');
+      } else {
+        setPaymentError('La commande n\'a pas pu être enregistrée. Veuillez réessayer.');
       }
-
-      const orderData = {
-        id: savedOrderId,
-        customerName: `${formData.shipping.first_name} ${formData.shipping.last_name}`,
-        items: cartItems.map(item => ({
-          ...item,
-          price: parseFloat(item.price) || 0,
-          quantity: item.quantity || 1,
-          image: item.image || item.image_url || (item.images && item.images[0]) || '/images/placeholder-product.jpg'
-        })),
-        subtotal: totals.subtotal,
-        shipping: {
-          firstName: formData.shipping.first_name,
-          lastName: formData.shipping.last_name,
-          streetAddress: formData.shipping.street_address,
-          postalCode: formData.shipping.postal_code,
-          city: formData.shipping.city,
-          country: formData.shipping.country,
-          email: formData.shipping.email,
-          phone: formData.shipping.phone
-        },
-        shippingCost: totals.shipping || 0,
-        total: totals.total,
-        payment: {
-          method,
-          status: 'paid',
-          details: paymentDetails
-        },
-        created_at: new Date().toISOString()
-      };
-
-      cartService.clearCart();
-      navigate('/order-confirmation', { state: { order: orderData, paymentMethod: method } });
-    }, 2000);
+      setPaymentProcessing(false);
+      return;
+    }
+    const orderData = buildOrderData(savedOrderId, 'mobile', {
+      operator: formData.payment.mobile_operator,
+      phone: formData.payment.mobile_phone,
+      holderName: formData.payment.mobile_name
+    });
+    cartService.clearCart();
+    setPaymentProcessing(false);
+    navigate('/order-confirmation', { state: { order: orderData, paymentMethod: 'mobile' } });
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  const { format: formatPrice } = useCurrency();
 
   if (loading) {
     return (
@@ -1156,34 +987,22 @@ const Checkout = () => {
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-6">Méthode de paiement</h2>
                 
-                <div className="space-y-4 mb-6">
-                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
+                <div className="space-y-3 mb-6">
+                  <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${formData.payment.method !== 'mobile' ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200'}`}>
                     <input
                       type="radio"
                       name="payment_method"
-                      value="card"
-                      checked={formData.payment.method === 'card'}
-                      onChange={(e) => handleInputChange('payment', 'method', e.target.value)}
+                      value="stripe"
+                      checked={formData.payment.method !== 'mobile'}
+                      onChange={() => handleInputChange('payment', 'method', 'stripe')}
                       className="mr-3"
                     />
-                    <CreditCard className="w-5 h-5 mr-2 text-blue-600" />
-                    <span className="font-medium">Carte de crédit</span>
-                  </label>
-                  
-                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payment_method"
-                      value="paypal"
-                      checked={formData.payment.method === 'paypal'}
-                      onChange={(e) => handleInputChange('payment', 'method', e.target.value)}
-                      className="mr-3"
-                    />
+                    <CreditCard className="w-5 h-5 mr-2 text-neutral-700" />
                     <Wallet className="w-5 h-5 mr-2 text-blue-500" />
-                    <span className="font-medium">PayPal</span>
+                    <span className="font-medium">Carte de crédit / PayPal</span>
                   </label>
-                  
-                  <label className="flex items-center p-4 border border-neutral-200 rounded-lg cursor-pointer">
+
+                  <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${formData.payment.method === 'mobile' ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200'}`}>
                     <input
                       type="radio"
                       name="payment_method"
@@ -1197,128 +1016,35 @@ const Checkout = () => {
                   </label>
                 </div>
 
-                {formData.payment.method === 'card' && (
-                  <div className="space-y-4">
-                    
-                    <input
-                      type="text"
-                      placeholder="Nom du titulaire"
-                      value={formData.payment.card_holder}
-                      onChange={(e) => handleInputChange('payment', 'card_holder', e.target.value)}
-                      className={`w-full p-3 border rounded-lg ${touchedFields.payment.card_holder && fieldErrors.payment.card_holder ? 'border-red-500' : 'border-neutral-200'}`}
-                    />
-                    {touchedFields.payment.card_holder && fieldErrors.payment.card_holder && (
-                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_holder}</p>
-                    )}
-                    
-                    <div className="relative">
-                      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center">
-                        {formData.payment.card_type ? (
-                          getCardLogo(formData.payment.card_type)
-                        ) : (
-                          <CreditCard className="w-5 h-5 text-gray-400" />
-                        )}
+                {/* Stripe PaymentElement (carte + PayPal) */}
+                {formData.payment.method !== 'mobile' && (
+                  <div className="mb-4">
+                    {stripeLoading && (
+                      <div className="space-y-2 animate-pulse">
+                        <div className="h-12 bg-neutral-100 rounded-lg" />
+                        <div className="h-12 bg-neutral-100 rounded-lg" />
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Numéro de carte (ex: 4242 4242 4242 4242)"
-                        value={formData.payment.card_number}
-                        onChange={(e) => handleInputChange('payment', 'card_number', e.target.value)}
-                        className={`w-full p-3 pl-12 border rounded-lg ${touchedFields.payment.card_number && fieldErrors.payment.card_number ? 'border-red-500' : 'border-neutral-200'}`}
-                        maxLength={19} // Maximum pour formatage avec espaces
-                      />
-                    </div>
-                    {formData.payment.card_type && (
-                      <p className="text-xs text-green-600 mt-1">
-                        {formData.payment.card_type === 'visa' && 'Visa détectée'}
-                        {formData.payment.card_type === 'mastercard' && 'Mastercard détectée'}
-                        {formData.payment.card_type === 'amex' && 'American Express détectée'}
-                      </p>
                     )}
-                    {touchedFields.payment.card_number && fieldErrors.payment.card_number && (
-                      <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_number}</p>
+                    {stripeClientSecret && stripePromise && (
+                      <Elements
+                        stripe={stripePromise}
+                        options={{
+                          clientSecret: stripeClientSecret,
+                          appearance: {
+                            theme: 'stripe',
+                            variables: { colorPrimary: '#171717', borderRadius: '8px' }
+                          }
+                        }}
+                      >
+                        <StripePaymentSection ref={stripeRef} disabled={paymentProcessing} />
+                      </Elements>
                     )}
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <input
-                        type="text"
-                        placeholder="MM/AA"
-                        value={formData.payment.card_expiry}
-                        onChange={(e) => handleInputChange('payment', 'card_expiry', e.target.value)}
-                        className={`w-full p-3 border rounded-lg ${touchedFields.payment.card_expiry && fieldErrors.payment.card_expiry ? 'border-red-500' : 'border-neutral-200'}`}
-                      />
-                      {touchedFields.payment.card_expiry && fieldErrors.payment.card_expiry && (
-                        <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.card_expiry}</p>
-                      )}
-                      
-                      <input
-                        type="text"
-                        placeholder="CVV"
-                        value={formData.payment.cvv}
-                        onChange={(e) => handleInputChange('payment', 'cvv', e.target.value)}
-                        className={`w-full p-3 border rounded-lg ${touchedFields.payment.cvv && fieldErrors.payment.cvv ? 'border-red-500' : 'border-neutral-200'}`}
-                      />
-                      {touchedFields.payment.cvv && fieldErrors.payment.cvv && (
-                        <p className="text-sm text-red-600 mt-1">{fieldErrors.payment.cvv}</p>
-                      )}
-                    </div>
+                    {!stripeLoading && !stripeClientSecret && paymentError && (
+                      <div className="border border-red-200 bg-red-50 rounded-lg p-4 text-sm text-red-700">{paymentError}</div>
+                    )}
                   </div>
                 )}
 
-                {formData.payment.method === 'paypal' && (
-                  <div className="space-y-4">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center space-x-3 mb-3">
-                        <Wallet className="w-6 h-6 text-blue-600" />
-                        <h3 className="font-semibold text-blue-900">Paiement PayPal sécurisé</h3>
-                      </div>
-                      <p className="text-sm text-blue-700 mb-4">
-                        Vous serez redirigé vers PayPal pour finaliser votre paiement en toute sécurité.
-                      </p>
-                      
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-blue-900 mb-1">
-                            Email PayPal (optionnel)
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="votre@email.com"
-                            value={formData.payment.paypal_email}
-                            onChange={(e) => handleInputChange('payment', 'paypal_email', e.target.value)}
-                            className="w-full p-3 border border-blue-200 rounded-lg bg-white"
-                          />
-                          <p className="text-xs text-blue-600 mt-1">
-                            Pour recevoir votre reçu par email
-                          </p>
-                        </div>
-                        
-                        <button
-                          type="button"
-                          onClick={handlePayPalPayment}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-                        >
-                          <Wallet className="w-5 h-5" />
-                          <span>Payer avec PayPal</span>
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-start space-x-2">
-                        <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-gray-600">
-                          <p className="font-medium text-gray-700 mb-1">Sécurité garantie</p>
-                          <ul className="space-y-1">
-                            <li> chiffrement SSL 256-bit</li>
-                            <li> Protection acheteur PayPal</li>
-                            <li> Paiement sans partager vos informations bancaires</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {formData.payment.method === 'mobile' && (
                   <div className="space-y-4">
@@ -1424,14 +1150,6 @@ const Checkout = () => {
                           )}
                         </div>
                         
-                        <button
-                          type="button"
-                          onClick={handleMobilePayment}
-                          className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-                        >
-                          <Smartphone className="w-5 h-5" />
-                          <span>Payer avec Mobile Money</span>
-                        </button>
                       </div>
                     </div>
                     
@@ -1452,12 +1170,31 @@ const Checkout = () => {
                   </div>
                 )}
 
+                {paymentError && formData.payment.method !== 'mobile' && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 mb-4">
+                    {paymentError}
+                  </div>
+                )}
+
                 <div className="flex justify-between mt-6">
-                  <button onClick={handlePrevStep} className="btn-secondary">
+                  <button onClick={handlePrevStep} className="btn-secondary" disabled={paymentProcessing}>
                     Retour
                   </button>
-                  <button onClick={handleNextStep} className="btn-luxury">
-                    Continuer
+                  <button
+                    onClick={handleNextStep}
+                    className="btn-luxury flex items-center gap-2 disabled:opacity-60"
+                    disabled={paymentProcessing || (formData.payment.method !== 'mobile' && stripeLoading)}
+                  >
+                    {paymentProcessing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Traitement...
+                      </>
+                    ) : formData.payment.method === 'mobile' ? (
+                      'Continuer'
+                    ) : (
+                      'Payer maintenant'
+                    )}
                   </button>
                 </div>
               </div>
@@ -1506,16 +1243,34 @@ const Checkout = () => {
                   </div>
                 </div>
 
+                {paymentError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                    {paymentError}
+                  </div>
+                )}
+
                 <div className="flex justify-between">
-                  <button onClick={handlePrevStep} className="btn-secondary">
+                  <button onClick={handlePrevStep} className="btn-secondary" disabled={paymentProcessing}>
                     Retour
                   </button>
-                  <button onClick={processPayment} className="btn-luxury">
-                    Confirmer la commande
+                  <button
+                    onClick={processPayment}
+                    className="btn-luxury flex items-center gap-2 disabled:opacity-60"
+                    disabled={paymentProcessing}
+                  >
+                    {paymentProcessing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Traitement en cours...
+                      </>
+                    ) : (
+                      'Confirmer la commande'
+                    )}
                   </button>
                 </div>
               </div>
             )}
+
           </div>
 
           <div className="lg:col-span-1">
@@ -1526,7 +1281,7 @@ const Checkout = () => {
                 {cartItems.map((item) => (
                   <div key={item.id} className="flex items-center space-x-4">
                     <img
-                      src={item.image || item.image_url || item.images?.[0] || '/images/placeholder-product.jpg'}
+                      src={resolveImageUrl(item.image || item.image_url || item.images?.[0]) || '/images/placeholder-product.jpg'}
                       alt={item.name}
                       className="w-16 h-16 object-cover rounded-lg"
                       onError={(e) => {

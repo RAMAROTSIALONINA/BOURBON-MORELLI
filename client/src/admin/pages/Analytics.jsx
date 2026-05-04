@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart, ShoppingBag,
   UserCheck, RefreshCw, Loader
@@ -32,7 +32,7 @@ const KpiCard = ({ icon: Icon, label, value, pct, format = 'number', color = 'pr
     primary: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
     purple: 'bg-purple-50 text-purple-600',
-    amber: 'bg-amber-50 text-amber-600'
+    amber: 'bg-gray-100 text-gray-700'
   };
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-neutral-200">
@@ -214,7 +214,7 @@ const CustomerTypeChart = ({ data }) => {
       <h3 className="text-lg font-semibold text-neutral-900 mb-4">Clients : Inscrits vs Invités (12 mois)</h3>
       <div className="flex items-center gap-4 mb-3 text-sm">
         <span className="flex items-center"><span className="w-3 h-3 bg-blue-600 rounded-sm mr-2"></span>Inscrits</span>
-        <span className="flex items-center"><span className="w-3 h-3 bg-amber-500 rounded-sm mr-2"></span>Invités</span>
+        <span className="flex items-center"><span className="w-3 h-3 bg-gray-500 rounded-sm mr-2"></span>Invités</span>
       </div>
       {data.length === 0 ? (
         <p className="text-center text-neutral-500 py-8">Aucune donnée</p>
@@ -229,7 +229,7 @@ const CustomerTypeChart = ({ data }) => {
                 <div className="w-full bg-neutral-100 rounded-t relative" style={{ height: `${h}%` }}>
                   <div className="absolute inset-x-0 bottom-0 bg-blue-600 rounded-t"
                     style={{ height: `${regPct}%` }} />
-                  <div className="absolute inset-x-0 top-0 bg-amber-500"
+                  <div className="absolute inset-x-0 top-0 bg-gray-500"
                     style={{ height: `${100 - regPct}%` }} />
                 </div>
                 <span className="text-xs text-neutral-600 mt-1">{d.month.slice(5)}</span>

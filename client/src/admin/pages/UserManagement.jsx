@@ -618,14 +618,14 @@ const UserManagement = () => {
         </div>
         
         {/* Indicateur Mode Développement */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6">
           <div className="flex items-center">
-            <div className="w-2 h-2 bg-yellow-400 rounded-full mr-3 animate-pulse"></div>
+            <div className="w-2 h-2 bg-gray-500 rounded-full mr-3 animate-pulse"></div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-yellow-800">
+              <p className="text-sm font-medium text-gray-800">
                 Mode Développement Actif
               </p>
-              <p className="text-xs text-yellow-600 mt-1">
+              <p className="text-xs text-gray-600 mt-1">
                 Utilisation de données mockées et contournement d'authentification. Les modifications ne seront pas sauvegardées.
               </p>
             </div>

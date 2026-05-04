@@ -1,447 +1,286 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Edit2, Trash2, Check, X, Home, Briefcase, Map } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Check, X, Home, Briefcase } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { addressService } from '../../services/accountService';
+
+const emptyForm = {
+  type: 'shipping',
+  first_name: '',
+  last_name: '',
+  company: '',
+  street_address: '',
+  apartment: '',
+  city: '',
+  postal_code: '',
+  country: 'Madagascar',
+  phone: '',
+  is_default: false
+};
 
 const Addresses = () => {
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingAddress, setEditingAddress] = useState(null);
-  const [formData, setFormData] = useState({
-    type: 'home',
-    name: '',
-    phone: '',
-    address: '',
-    city: '',
-    postalCode: '',
-    country: 'Madagascar',
-    isDefault: false
-  });
-  const [errors, setErrors] = useState({});
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadAddresses();
-  }, []);
-
-  const loadAddresses = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      // Simulation de chargement des adresses
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Adresses simulées
-      const mockAddresses = [
-        {
-          id: 1,
-          type: 'home',
-          name: 'Fanomezantsoa Koloina',
-          phone: '+261 34 22 556 62',
-          address: 'Lot II M 123 Tsarasaotra',
-          city: 'Antananarivo',
-          postalCode: '101',
-          country: 'Madagascar',
-          isDefault: true
-        },
-        {
-          id: 2,
-          type: 'work',
-          name: 'RASOAZANAKOLONA Koloina',
-          phone: '+261 34 00 000 00',
-          address: 'Immeuble Ankorondrano, 4ème étage',
-          city: 'Antananarivo',
-          postalCode: '101',
-          country: 'Madagascar',
-          isDefault: false
-        }
-      ];
-      
-      setAddresses(mockAddresses);
-    } catch (error) {
-      console.error('Erreur chargement adresses:', error);
+      const list = await addressService.list();
+      setAddresses(list);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || 'Impossible de charger les adresses');
     } finally {
       setLoading(false);
     }
   };
 
-  const getAddressIcon = (type) => {
-    const icons = {
-      home: Home,
-      work: Briefcase,
-      other: Map
-    };
-    return icons[type] || icons.other;
+  useEffect(() => { load(); }, []);
+
+  const openAdd = () => {
+    setEditingId(null);
+    setFormData(emptyForm);
+    setShowModal(true);
   };
 
-  const getAddressTypeName = (type) => {
-    const names = {
-      home: 'Domicile',
-      work: 'Travail',
-      other: 'Autre'
-    };
-    return names[type] || 'Autre';
+  const openEdit = (addr) => {
+    setEditingId(addr.id);
+    setFormData({
+      type: addr.type || 'shipping',
+      first_name: addr.first_name || '',
+      last_name: addr.last_name || '',
+      company: addr.company || '',
+      street_address: addr.street_address || '',
+      apartment: addr.apartment || '',
+      city: addr.city || '',
+      postal_code: addr.postal_code || '',
+      country: addr.country || 'Madagascar',
+      phone: addr.phone || '',
+      is_default: !!addr.is_default
+    });
+    setShowModal(true);
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setFormData(emptyForm);
   };
 
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.name.trim()) newErrors.name = 'Nom requis';
-    if (!formData.phone.trim()) newErrors.phone = 'Téléphone requis';
-    if (!formData.address.trim()) newErrors.address = 'Adresse requise';
-    if (!formData.city.trim()) newErrors.city = 'Ville requise';
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const validate = () => {
+    const required = ['first_name', 'last_name', 'street_address', 'city', 'postal_code', 'country'];
+    for (const f of required) {
+      if (!formData[f] || !String(formData[f]).trim()) {
+        toast.error('Merci de remplir tous les champs obligatoires');
+        return false;
+      }
+    }
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validateForm()) return;
-    
+    if (!validate()) return;
+    setSaving(true);
     try {
-      if (editingAddress) {
-        // Mise à jour d'une adresse existante
-        setAddresses(prev => prev.map(addr => 
-          addr.id === editingAddress.id 
-            ? { ...formData, id: editingAddress.id }
-            : formData.isDefault ? { ...addr, isDefault: false } : addr
-        ));
+      if (editingId) {
+        await addressService.update(editingId, formData);
+        toast.success('Adresse mise à jour');
       } else {
-        // Ajout d'une nouvelle adresse
-        const newAddress = {
-          ...formData,
-          id: Date.now()
-        };
-        
-        // Si la nouvelle adresse est par défaut, désactiver les autres
-        if (formData.isDefault) {
-          setAddresses(prev => prev.map(addr => ({ ...addr, isDefault: false })));
-        }
-        
-        setAddresses(prev => [...prev, newAddress]);
+        await addressService.create(formData);
+        toast.success('Adresse ajoutée');
       }
-      
-      // Réinitialiser le formulaire
-      setFormData({
-        type: 'home',
-        name: '',
-        phone: '',
-        address: '',
-        city: '',
-        postalCode: '',
-        country: 'Madagascar',
-        isDefault: false
-      });
-      setShowAddModal(false);
-      setEditingAddress(null);
-      setErrors({});
-    } catch (error) {
-      console.error('Erreur sauvegarde adresse:', error);
+      closeModal();
+      await load();
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleEdit = (address) => {
-    setEditingAddress(address);
-    setFormData(address);
-    setShowAddModal(true);
-    setErrors({});
-  };
-
-  const handleDelete = (addressId) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette adresse ?')) {
-      setAddresses(prev => prev.filter(addr => addr.id !== addressId));
+  const handleDelete = async (id) => {
+    if (!window.confirm('Supprimer cette adresse ?')) return;
+    try {
+      await addressService.remove(id);
+      toast.success('Adresse supprimée');
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur lors de la suppression');
     }
   };
 
-  const handleSetDefault = (addressId) => {
-    setAddresses(prev => prev.map(addr => ({
-      ...addr,
-      isDefault: addr.id === addressId
-    })));
+  const setDefault = async (addr) => {
+    try {
+      await addressService.update(addr.id, { ...addr, is_default: true });
+      toast.success('Adresse par défaut mise à jour');
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur');
+    }
   };
 
-  const handleCancel = () => {
-    setShowAddModal(false);
-    setEditingAddress(null);
-    setFormData({
-      type: 'home',
-      name: '',
-      phone: '',
-      address: '',
-      city: '',
-      postalCode: '',
-      country: 'Madagascar',
-      isDefault: false
-    });
-    setErrors({});
+  const TypeIcon = ({ type }) => {
+    const Icon = type === 'billing' ? Briefcase : Home;
+    return <Icon className="w-5 h-5 text-primary-500" />;
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-500 border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Mes adresses</h2>
-          <p className="text-gray-600">Gérez vos adresses de livraison</p>
-        </div>
-        
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-luxury font-bold text-neutral-900 flex items-center gap-2">
+          <MapPin className="w-6 h-6" />
+          Mes adresses
+        </h2>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          onClick={openAdd}
+          className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-medium"
         >
-          <Plus className="w-4 h-4" />
-          <span>Ajouter une adresse</span>
+          <Plus className="w-4 h-4" /> Ajouter
         </button>
       </div>
 
       {addresses.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-          <MapPin className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune adresse</h3>
-          <p className="text-gray-600 mb-4">Vous n'avez pas encore ajouté d'adresse.</p>
+        <div className="text-center py-16 bg-neutral-50 rounded-lg">
+          <MapPin className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+          <p className="text-neutral-600 mb-4">Vous n'avez pas encore d'adresse enregistrée.</p>
           <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={openAdd}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
           >
-            Ajouter une adresse
+            <Plus className="w-4 h-4" /> Ajouter une adresse
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {addresses.map((address) => {
-            const AddressIcon = getAddressIcon(address.type);
-            
-            return (
-              <div key={address.id} className="bg-white rounded-lg shadow-sm p-6 relative">
-                {address.isDefault && (
-                  <div className="absolute top-4 right-4">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <Check className="w-3 h-3 mr-1" />
-                      Par défaut
-                    </span>
-                  </div>
-                )}
-                
-                <div className="flex items-start space-x-3 mb-4">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <AddressIcon className="w-5 h-5 text-gray-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <h3 className="font-medium text-gray-900">{address.name}</h3>
-                      <span className="text-sm text-gray-500">
-                        ({getAddressTypeName(address.type)})
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">{address.phone}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-1 text-sm text-gray-600 mb-4">
-                  <p>{address.address}</p>
-                  <p>{address.postalCode} {address.city}</p>
-                  <p>{address.country}</p>
-                </div>
-                
-                <div className="flex items-center space-x-2 pt-4 border-t">
-                  {!address.isDefault && (
-                    <button
-                      onClick={() => handleSetDefault(address.id)}
-                      className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                    >
-                      Définir par défaut
-                    </button>
+          {addresses.map((a) => (
+            <div key={a.id} className={`bg-white rounded-lg border p-5 ${a.is_default ? 'border-primary-500 ring-2 ring-primary-100' : 'border-neutral-200'}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TypeIcon type={a.type} />
+                  <span className="text-xs uppercase font-semibold text-neutral-500">
+                    {a.type === 'billing' ? 'Facturation' : 'Livraison'}
+                  </span>
+                  {a.is_default && (
+                    <span className="text-xs bg-primary-500 text-white px-2 py-0.5 rounded-full">Par défaut</span>
                   )}
-                  
-                  <div className="flex-1 flex items-center justify-end space-x-2">
-                    <button
-                      onClick={() => handleEdit(address)}
-                      className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(address.id)}
-                      className="p-2 text-gray-600 hover:text-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => openEdit(a)} className="p-1.5 hover:bg-neutral-100 rounded" title="Modifier">
+                    <Edit2 className="w-4 h-4 text-neutral-600" />
+                  </button>
+                  <button onClick={() => handleDelete(a.id)} className="p-1.5 hover:bg-red-50 rounded" title="Supprimer">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
+              <p className="font-semibold text-neutral-900">{a.first_name} {a.last_name}</p>
+              {a.company && <p className="text-sm text-neutral-600">{a.company}</p>}
+              <p className="text-sm text-neutral-700 mt-1">
+                {a.street_address}
+                {a.apartment && `, ${a.apartment}`}
+              </p>
+              <p className="text-sm text-neutral-700">{a.postal_code} {a.city}</p>
+              <p className="text-sm text-neutral-700">{a.country}</p>
+              {a.phone && <p className="text-sm text-neutral-500 mt-2">📞 {a.phone}</p>}
+              {!a.is_default && (
+                <button onClick={() => setDefault(a)} className="mt-3 text-xs text-primary-500 hover:underline flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Définir par défaut
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Modal Ajout/Modification d'adresse */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingAddress ? 'Modifier l\'adresse' : 'Ajouter une adresse'}
-                </h3>
-                <button
-                  onClick={handleCancel}
-                  className="p-2 text-gray-600 hover:text-gray-900"
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeModal}>
+          <div className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold">{editingId ? 'Modifier' : 'Nouvelle'} adresse</h3>
+              <button onClick={closeModal} className="p-1 hover:bg-neutral-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm"
                 >
-                  <X className="w-5 h-5" />
-                </button>
+                  <option value="shipping">Livraison</option>
+                  <option value="billing">Facturation</option>
+                </select>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Type d'adresse
-                  </label>
-                  <select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="home">Domicile</option>
-                    <option value="work">Travail</option>
-                    <option value="other">Autre</option>
-                  </select>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Prénom *" value={formData.first_name} onChange={(v) => setFormData({ ...formData, first_name: v })} />
+                <Field label="Nom *" value={formData.last_name} onChange={(v) => setFormData({ ...formData, last_name: v })} />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nom complet
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.name ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Nom complet"
-                  />
-                  {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
-                </div>
+              <Field label="Société (facultatif)" value={formData.company} onChange={(v) => setFormData({ ...formData, company: v })} />
+              <Field label="Adresse *" value={formData.street_address} onChange={(v) => setFormData({ ...formData, street_address: v })} />
+              <Field label="Complément (apt, étage…)" value={formData.apartment} onChange={(v) => setFormData({ ...formData, apartment: v })} />
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Téléphone
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.phone ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="+261 34 00 000 00"
-                  />
-                  {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Code postal *" value={formData.postal_code} onChange={(v) => setFormData({ ...formData, postal_code: v })} />
+                <Field label="Ville *" value={formData.city} onChange={(v) => setFormData({ ...formData, city: v })} />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Adresse
-                  </label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    rows={2}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.address ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Adresse complète"
-                  />
-                  {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
-                </div>
+              <Field label="Pays *" value={formData.country} onChange={(v) => setFormData({ ...formData, country: v })} />
+              <Field label="Téléphone" value={formData.phone} onChange={(v) => setFormData({ ...formData, phone: v })} />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Ville
-                    </label>
-                    <input
-                      type="text"
-                      name="city"
-                      value={formData.city}
-                      onChange={handleChange}
-                      className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.city ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                      placeholder="Ville"
-                    />
-                    {errors.city && <p className="mt-1 text-sm text-red-600">{errors.city}</p>}
-                  </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={formData.is_default}
+                  onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
+                  className="rounded"
+                />
+                Définir comme adresse par défaut
+              </label>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Code postal
-                    </label>
-                    <input
-                      type="text"
-                      name="postalCode"
-                      value={formData.postalCode}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="101"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      name="isDefault"
-                      checked={formData.isDefault}
-                      onChange={handleChange}
-                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="text-sm text-gray-700">
-                      Définir comme adresse par défaut
-                    </span>
-                  </label>
-                </div>
-
-                <div className="flex items-center space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="flex-1 py-2 px-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    {editingAddress ? 'Modifier' : 'Ajouter'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="flex justify-end gap-2 pt-3">
+                <button type="button" onClick={closeModal} className="px-4 py-2 border border-neutral-200 rounded-lg text-sm hover:bg-neutral-50">
+                  Annuler
+                </button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 disabled:opacity-50">
+                  {saving ? 'Enregistrement…' : editingId ? 'Mettre à jour' : 'Ajouter'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+const Field = ({ label, value, onChange }) => (
+  <div>
+    <label className="block text-xs font-medium text-neutral-600 mb-1">{label}</label>
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+    />
+  </div>
+);
 
 export default Addresses;

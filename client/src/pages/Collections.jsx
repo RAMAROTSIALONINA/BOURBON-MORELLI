@@ -57,10 +57,14 @@ const Collections = ({ onAddToCart }) => {
           reviews_count: product.reviews_count || 0,
           inventory_quantity: product.stock || 0,
           stock: product.stock || 0,
-          reviews: product.reviews_count || 0
+          reviews: product.reviews_count || 0,
+          sizes: Array.isArray(product.sizes) 
+            ? product.sizes 
+            : (typeof product.sizes === 'string' && product.sizes 
+                ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) 
+                : [])
         })) : [];
         
-        console.log('Produits formatés:', formattedProducts.map(p => `${p.name} (${p.category.name})`));
         setProducts(formattedProducts);
         
         // Informations sur la catégorie

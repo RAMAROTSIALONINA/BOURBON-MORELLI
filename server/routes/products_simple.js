@@ -82,6 +82,7 @@ router.get('/', async (req, res) => {
         status: product.status,
         featured: Boolean(product.featured),
         stock: product.stock || 0,
+        sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
         created_at: product.created_at
       });
     }
@@ -166,6 +167,7 @@ router.get('/:id', async (req, res) => {
         status: product.status,
         featured: Boolean(product.featured),
         stock: product.stock || 0,
+        sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
         created_at: product.created_at
       }
     });
@@ -194,7 +196,12 @@ function slugify(text) {
 router.post('/', authenticateAdmin, async (req, res) => {
   let connection;
   try {
-    const { name, description, price, category, category_id, stock, status, images, image_url } = req.body;
+    const { name, description, price, category, category_id, stock, status, images, image_url, sizes } = req.body;
+
+    // Normaliser sizes en chaîne "S,M,L"
+    const normalizedSizes = Array.isArray(sizes)
+      ? sizes.map(s => String(s).trim()).filter(Boolean).join(',')
+      : (typeof sizes === 'string' ? sizes.trim() : '');
 
     // Debug logs pour les images
     console.log('=== CRÉATION PRODUIT - DEBUG IMAGES ===');
@@ -257,8 +264,8 @@ router.post('/', authenticateAdmin, async (req, res) => {
 
     // ── Créer le produit ──────────────────────────────────────
     const [result] = await connection.execute(`
-      INSERT INTO products (name, description, price, category_id, status, slug, sku, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      INSERT INTO products (name, description, price, category_id, status, slug, sku, sizes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `, [
       name,
       description || '',
@@ -266,7 +273,8 @@ router.post('/', authenticateAdmin, async (req, res) => {
       resolvedCategoryId,
       status || 'active',
       slug,
-      sku
+      sku,
+      normalizedSizes || null
     ]);
 
     const productId = result.insertId;
@@ -334,7 +342,7 @@ router.put('/:id', authenticateAdmin, async (req, res) => {
   let connection;
   try {
     const { id } = req.params;
-    const { name, description, price, category, category_id, stock, status, images, image_url } = req.body;
+    const { name, description, price, category, category_id, stock, status, images, image_url, sizes } = req.body;
 
     connection = await mysql.createConnection({
       host     : process.env.DB_HOST || 'localhost',
@@ -402,6 +410,13 @@ router.put('/:id', authenticateAdmin, async (req, res) => {
     if (status !== undefined)      { updates.push('status = ?');        params.push(status || 'active'); }
     if (resolvedCategoryId !== null) { updates.push('category_id = ?'); params.push(resolvedCategoryId); }
     if (newSlug !== currentProduct.slug) { updates.push('slug = ?');    params.push(newSlug); }
+    if (sizes !== undefined) {
+      const normalizedSizes = Array.isArray(sizes)
+        ? sizes.map(s => String(s).trim()).filter(Boolean).join(',')
+        : (typeof sizes === 'string' ? sizes.trim() : '');
+      updates.push('sizes = ?');
+      params.push(normalizedSizes || null);
+    }
 
     params.push(id);
 
@@ -583,6 +598,7 @@ router.get('/category/:categoryName', async (req, res) => {
       images: product.primary_image ? [product.primary_image] : [],
       status: product.status,
       featured: Boolean(product.featured),
+      sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
       created_at: product.created_at
     }));
 

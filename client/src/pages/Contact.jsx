@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { Mail, Phone, MapPin, Clock, Send, User, MessageSquare, Facebook, Instagram, Twitter, Share2 } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:5003/api';
+
+// Marqueur de version — si vous voyez cette ligne dans la console, le nouveau code est bien chargé
+console.log('%c[Contact] V2 chargé — axios dynamique actif', 'color: green; font-weight: bold');
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -54,22 +60,26 @@ const Contact = () => {
     setLoading(true);
 
     try {
-      // Simuler l'envoi du formulaire
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      console.log('Message envoyé:', formData);
+      const response = await axios.post(`${API_BASE_URL}/contact`, formData);
+      console.log('[Contact] Message envoyé, ID:', response.data?.id);
       setSubmitted(true);
-      
-      // Réinitialiser le formulaire
-      setFormData({
-        name: '',
-        email: '',
-        subject: '',
-        message: ''
-      });
+      setFormData({ name: '', email: '', subject: '', message: '' });
     } catch (error) {
-      console.error('Erreur:', error);
-      setErrors({ general: 'Une erreur est survenue. Veuillez réessayer.' });
+      console.error('[Contact] ERREUR envoi:', error);
+      console.error('[Contact] Réponse serveur:', error.response?.data);
+      console.error('[Contact] Statut HTTP:', error.response?.status);
+      let msg;
+      if (error.response?.status === 429) {
+        msg = 'Trop de tentatives. Veuillez patienter quelques minutes.';
+      } else if (error.response?.status === 400) {
+        const details = error.response.data?.details;
+        msg = details?.[0]?.msg || error.response.data?.message || 'Données invalides.';
+      } else if (!error.response) {
+        msg = 'Impossible de contacter le serveur. Vérifiez qu\'il est démarré sur le port 5003.';
+      } else {
+        msg = error.response?.data?.message || error.response?.data?.error || 'Une erreur est survenue. Veuillez réessayer.';
+      }
+      setErrors({ general: msg });
     } finally {
       setLoading(false);
     }

@@ -1,143 +1,77 @@
+import axios from 'axios';
 import emailService from './emailService';
 
+const API = process.env.REACT_APP_API_URL || 'http://localhost:5003/api';
+
+const normalizeUser = (u = {}) => ({
+  id: u.id,
+  firstName: u.first_name || u.firstName || '',
+  lastName: u.last_name || u.lastName || '',
+  email: u.email || '',
+  phone: u.phone || '',
+  address: u.address || '',
+  role: u.role || 'customer',
+  createdAt: u.created_at || u.createdAt || new Date().toISOString()
+});
+
 const authService = {
-  // Inscription d'un nouvel utilisateur
+  // Inscription d'un nouvel utilisateur (appel API réel)
   register: async (userData) => {
     try {
-      console.log('=== REGISTER USER ===');
-      console.log('User data:', JSON.stringify(userData, null, 2));
-      
-      // Simulation d'inscription (remplacer par vrai appel API)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simuler une réponse réussie
-      const mockResponse = {
-        success: true,
-        message: 'Compte créé avec succès',
-        user: {
-          id: Date.now(),
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          email: userData.email,
-          phone: userData.phone,
-          address: userData.address,
-          role: 'customer',
-          createdAt: new Date().toISOString()
-        },
-        token: 'mock-token-' + Date.now()
+      const payload = {
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        email: userData.email,
+        password: userData.password,
+        phone: userData.phone || undefined
       };
-      
-      console.log('=== REGISTER RESPONSE ===');
-      console.log('Response:', JSON.stringify(mockResponse, null, 2));
-      
-      // Stocker les infos utilisateur
-      localStorage.setItem('userToken', mockResponse.token);
-      localStorage.setItem('userInfo', JSON.stringify(mockResponse.user));
-      
-      // Envoyer un email de bienvenue
+
+      const { data } = await axios.post(`${API}/auth/register`, payload);
+      const user = normalizeUser(data.user);
+      const token = data.token;
+
+      localStorage.setItem('userToken', token);
+      localStorage.setItem('userInfo', JSON.stringify(user));
+
+      // Email de bienvenue (non bloquant)
       try {
-        const emailResult = await emailService.sendWelcomeEmail(
-          userData.email, 
-          `${userData.firstName} ${userData.lastName}`
-        );
-        console.log('Welcome email result:', emailResult);
-      } catch (emailError) {
-        console.warn('Erreur envoi email de bienvenue:', emailError);
-        // Ne pas bloquer l'inscription si l'email échoue
-      }
-      
-      return mockResponse;
+        await emailService.sendWelcomeEmail(user.email, `${user.firstName} ${user.lastName}`);
+      } catch (e) { console.warn('Welcome email failed:', e); }
+
+      return { success: true, message: 'Compte créé avec succès', user, token };
     } catch (error) {
-      console.error('Erreur lors de l\'inscription:', error);
-      throw error.response?.data || { 
-        success: false, 
-        message: 'Erreur lors de la création du compte',
-        error: 'Registration failed'
-      };
+      // Afficher le premier message de validation serveur si disponible
+      const details = error.response?.data?.details;
+      const msg = (details && details.length > 0)
+        ? details[0].msg
+        : (error.response?.data?.message || error.response?.data?.error || 'Erreur lors de la création du compte');
+      const err = new Error(msg);
+      err.success = false;
+      throw err;
     }
   },
 
-  // Connexion d'un utilisateur
+  // Connexion (appel API réel)
   login: async (credentials) => {
     try {
-      console.log('=== LOGIN USER ===');
-      console.log('Credentials:', JSON.stringify(credentials, null, 2));
-      
-      // Simulation de connexion (remplacer par vrai appel API)
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Vérifier les identifiants (simulation - accepter n'importe quel email avec un mot de passe valide)
-      if (credentials.email && credentials.password && credentials.password.length >= 6) {
-        // Récupérer les infos utilisateur depuis localStorage si elles existent
-        const savedUserInfo = localStorage.getItem('userInfo');
-        let userInfo = savedUserInfo ? JSON.parse(savedUserInfo) : null;
-        
-        // Si l'utilisateur s'est déjà inscrit, utiliser ses infos
-        if (userInfo && userInfo.email === credentials.email) {
-          const mockResponse = {
-            success: true,
-            message: 'Connexion réussie',
-            user: userInfo,
-            token: 'mock-token-' + Date.now()
-          };
-          
-          console.log('=== LOGIN RESPONSE ===');
-          console.log('Response:', JSON.stringify(mockResponse, null, 2));
-          
-          // Mettre à jour le token
-          localStorage.setItem('userToken', mockResponse.token);
-          localStorage.setItem('userInfo', JSON.stringify(mockResponse.user));
-          
-          return mockResponse;
-        } else {
-          // Nouvelle connexion avec infos par défaut
-          const mockResponse = {
-            success: true,
-            message: 'Connexion réussie',
-            user: {
-              id: Date.now(),
-              firstName: 'Utilisateur',
-              lastName: 'Enregistré',
-              email: credentials.email,
-              phone: '',
-              address: '',
-              role: 'customer',
-              createdAt: new Date().toISOString()
-            },
-            token: 'mock-token-' + Date.now()
-          };
-          
-          console.log('=== LOGIN RESPONSE ===');
-          console.log('Response:', JSON.stringify(mockResponse, null, 2));
-          
-          // Stocker les infos utilisateur
-          localStorage.setItem('userToken', mockResponse.token);
-          localStorage.setItem('userInfo', JSON.stringify(mockResponse.user));
-          
-          return mockResponse;
-        }
-      } else {
-        // Simuler une erreur d'authentification
-        const response = {
-          ok: false,
-          status: 401,
-          data: {
-            success: false,
-            message: 'Email ou mot de passe incorrect',
-            error: 'Invalid credentials'
-          }
-        };
-        if (!response.ok) {
-          throw new Error('Invalid credentials');
-        }
-      }
+      const { data } = await axios.post(`${API}/auth/login`, {
+        email: credentials.email,
+        password: credentials.password
+      });
+      const user = normalizeUser(data.user);
+      const token = data.token;
+
+      localStorage.setItem('userToken', token);
+      localStorage.setItem('userInfo', JSON.stringify(user));
+
+      return { success: true, message: 'Connexion réussie', user, token };
     } catch (error) {
       console.error('Erreur lors de la connexion:', error);
-      throw error.response?.data || { 
-        success: false, 
-        message: 'Erreur lors de la connexion',
-        error: 'Login failed'
-      };
+      const msg = error.response?.data?.message || error.response?.data?.error || 'Email ou mot de passe incorrect';
+      const err = new Error(msg);
+      err.success = false;
+      err.code = 'Login failed';
+      throw err;
     }
   },
 
@@ -277,120 +211,39 @@ const authService = {
     return userInfo ? JSON.parse(userInfo) : null;
   },
 
-  // Récupération de mot de passe
+  // Demande de réinitialisation (API réelle)
   forgotPassword: async (email) => {
     try {
-      console.log('=== FORGOT PASSWORD ===');
-      console.log('Email:', email);
-      
-      // Simulation d'envoi d'email de réinitialisation
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Vérifier si l'email existe (simulation)
-      const savedUserInfo = localStorage.getItem('userInfo');
-      let userInfo = savedUserInfo ? JSON.parse(savedUserInfo) : null;
-      
-      if (userInfo && userInfo.email === email) {
-        // Simuler l'envoi d'un email de réinitialisation
-        const resetToken = 'reset-token-' + Date.now();
-        const resetData = {
-          email: email,
-          token: resetToken,
-          expiresAt: new Date(Date.now() + 3600000).toISOString() // 1 heure
-        };
-        
-        // Stocker temporairement les données de réinitialisation
-        localStorage.setItem('passwordReset', JSON.stringify(resetData));
-        
-        // Créer le lien de réinitialisation
-        const resetLink = `${window.location.origin}/reset-password?token=${resetToken}`;
-        
-        // Envoyer l'email de réinitialisation
-        const emailResult = await emailService.sendPasswordResetEmail(email, resetLink);
-        
-        console.log('=== RESET EMAIL SENT ===');
-        console.log('Reset token:', resetToken);
-        console.log('Email result:', emailResult);
-        
-        return {
-          success: true,
-          message: emailResult.success ? 
-            'Un email de réinitialisation a été envoyé à votre adresse email.' :
-            'Un lien de réinitialisation a été généré (mode démo).',
-          resetToken: resetToken,
-          resetLink: resetLink,
-          emailSent: emailResult.success
-        };
-      } else {
-        // Pour des raisons de sécurité, ne pas révéler si l'email existe ou non
-        console.log('Email non trouvé, mais message de succès envoyé pour sécurité');
-        
-        return {
-          success: true,
-          message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé.'
-        };
-      }
-    } catch (error) {
-      console.error('Erreur lors de la récupération du mot de passe:', error);
-      throw error.response?.data || { 
-        success: false, 
-        message: 'Erreur lors de l\'envoi du lien de réinitialisation',
-        error: 'Forgot password failed'
+      const { data } = await axios.post(`${API}/auth/forgot-password`, { email });
+      return {
+        success: true,
+        message: data.message || 'Si cet email existe, un lien a été envoyé.',
+        // Présent uniquement en dev si email non configuré
+        devResetLink: data.devResetLink || null
       };
+    } catch (error) {
+      const msg = error.response?.data?.error || error.response?.data?.message || 'Erreur lors de l\'envoi du lien';
+      const err = new Error(msg);
+      err.success = false;
+      throw err;
     }
   },
 
-  // Réinitialiser le mot de passe
+  // Réinitialiser le mot de passe (API réelle)
   resetPassword: async (token, newPassword) => {
     try {
-      console.log('=== RESET PASSWORD ===');
-      console.log('Token:', token);
-      
-      // Simulation de réinitialisation de mot de passe
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Vérifier le token de réinitialisation
-      const resetData = localStorage.getItem('passwordReset');
-      if (!resetData) {
-        const error = new Error('Token de réinitialisation invalide ou expiré');
-        throw error;
-      }
-      
-      const resetInfo = JSON.parse(resetData);
-      
-      // Vérifier si le token est valide et non expiré
-      if (resetInfo.token !== token || new Date(resetInfo.expiresAt) < new Date()) {
-        localStorage.removeItem('passwordReset');
-        const error = new Error('Token de réinitialisation invalide ou expiré');
-        throw error;
-      }
-      
-      // Mettre à jour le mot de passe de l'utilisateur
-      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-      if (userInfo.email === resetInfo.email) {
-        // Dans une vraie application, le mot de passe serait hashé et stocké en base de données
-        console.log('Password updated for user:', resetInfo.email);
-        
-        // Nettoyer les données de réinitialisation
-        localStorage.removeItem('passwordReset');
-        
-        console.log('=== PASSWORD RESET SUCCESS ===');
-        
-        return {
-          success: true,
-          message: 'Mot de passe réinitialisé avec succès'
-        };
-      } else {
-        const error = new Error('Utilisateur non trouvé');
-        throw error;
-      }
+      const { data } = await axios.post(`${API}/auth/reset-password`, {
+        token,
+        password: newPassword
+      });
+      try { localStorage.removeItem('passwordReset'); } catch {}
+      return { success: true, message: data.message || 'Mot de passe réinitialisé avec succès' };
     } catch (error) {
-      console.error('Erreur lors de la réinitialisation du mot de passe:', error);
-      throw error.response?.data || { 
-        success: false, 
-        message: 'Erreur lors de la réinitialisation du mot de passe',
-        error: 'Reset password failed'
-      };
+      console.error('Erreur resetPassword:', error);
+      const msg = error.response?.data?.error || error.response?.data?.message || 'Token invalide ou expiré';
+      const err = new Error(msg);
+      err.success = false;
+      throw err;
     }
   }
 };

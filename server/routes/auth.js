@@ -1,9 +1,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const { sendResetPasswordEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -150,6 +152,84 @@ router.post('/login', [
       error: 'Erreur serveur',
       message: 'Impossible de se connecter'
     });
+  }
+});
+
+// POST /api/auth/forgot-password - Demande de réinitialisation
+router.post('/forgot-password', [
+  body('email').isEmail().normalizeEmail().withMessage('Email invalide')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Pour raison de sécurité : toujours répondre la même chose
+    const users = await query('SELECT id, first_name, email FROM users WHERE email = ? LIMIT 1', [email]);
+
+    if (users.length > 0) {
+      const user = users[0];
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = new Date(Date.now() + 60 * 60 * 1000); // 1h
+
+      await query(
+        'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+        [token, expires, user.id]
+      );
+
+      const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+
+      // Tenter l'envoi d'email (non bloquant)
+      const emailResult = await sendResetPasswordEmail(email, user.first_name, resetLink);
+
+      if (!emailResult.sent) {
+        // Email non configuré : retourner le lien en dev uniquement
+        if (process.env.NODE_ENV !== 'production') {
+          return res.json({
+            message: 'Si cet email existe, un lien a été envoyé.',
+            devResetLink: resetLink,
+            devToken: token
+          });
+        }
+      }
+    }
+
+    res.json({ message: 'Si cet email existe, un lien a été envoyé.' });
+  } catch (err) {
+    console.error('Erreur forgot-password:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/auth/reset-password - Réinitialiser avec le token
+router.post('/reset-password', [
+  body('token').notEmpty().withMessage('Token requis'),
+  body('password').isLength({ min: 8 }).withMessage('Mot de passe min 8 caractères')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    const users = await query(
+      'SELECT id, reset_token_expires FROM users WHERE reset_token = ? LIMIT 1',
+      [token]
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({ error: 'Token invalide ou déjà utilisé' });
+    }
+    const user = users[0];
+    if (!user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
+      return res.status(400).json({ error: 'Token expiré' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await query(
+      'UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+      [passwordHash, user.id]
+    );
+
+    res.json({ message: 'Mot de passe réinitialisé avec succès' });
+  } catch (err) {
+    console.error('Erreur reset-password:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

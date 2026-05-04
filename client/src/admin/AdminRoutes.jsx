@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
 import AdminLogin from './pages/AdminLogin';
+import FooterManagement from './pages/FooterManagement';
 
 const AdminRoutes = () => {
   return (
@@ -23,6 +24,10 @@ const AdminRoutes = () => {
       <Route path="/reports" element={<AdminDashboard />} />
       <Route path="/settings" element={<AdminDashboard />} />
       <Route path="/history" element={<AdminDashboard />} />
+      <Route path="/contact" element={<AdminDashboard />} />
+      <Route path="/contact/:id" element={<AdminDashboard />} />
+      <Route path="/footer" element={<FooterManagement />} />
+      <Route path="/about" element={<AdminDashboard />} />
       <Route path="/search" element={<AdminDashboard />} />
       <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>

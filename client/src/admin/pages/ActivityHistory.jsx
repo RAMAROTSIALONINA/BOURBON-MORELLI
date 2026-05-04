@@ -19,7 +19,8 @@ import {
   Shield,
   CreditCard,
   BarChart3,
-  FileText
+  FileText,
+  Mail
 } from 'lucide-react';
 import useNotificationStore from '../../services/notificationService';
 
@@ -32,7 +33,8 @@ const CATEGORY_CONFIG = {
   'Paiement': { icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
   'Analytics': { icon: BarChart3, color: 'text-sky-600', bg: 'bg-sky-50' },
   'Rapport': { icon: FileText, color: 'text-slate-600', bg: 'bg-slate-50' },
-  'Auth': { icon: LogIn, color: 'text-amber-600', bg: 'bg-amber-50' },
+  'Contact': { icon: Mail, color: 'text-pink-600', bg: 'bg-pink-50' },
+  'Auth': { icon: LogIn, color: 'text-gray-600', bg: 'bg-gray-50' },
   'Paramètre': { icon: Settings, color: 'text-gray-600', bg: 'bg-gray-50' },
   'Notification': { icon: Bell, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   'Erreur': { icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },

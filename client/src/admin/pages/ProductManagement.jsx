@@ -40,8 +40,10 @@ const ProductManagement = () => {
     category: '',
     stock: '',
     status: 'active',
-    images: []
+    images: [],
+    sizes: []
   });
+  const AVAILABLE_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
   const [selectedImages, setSelectedImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -165,7 +167,8 @@ const ProductManagement = () => {
       category: '',
       stock: '',
       status: 'active',
-      images: []
+      images: [],
+      sizes: []
     });
     setSelectedImages([]);
     setImagePreviews([]);
@@ -321,7 +324,8 @@ const ProductManagement = () => {
         category    : formData.category,
         stock       : parseInt(formData.stock) || 0,
         status      : formData.status,
-        images      : uploadedImages   // Tableau d'URLs -> ["/uploads/products/xxx.png", ...]
+        images      : uploadedImages,   // Tableau d'URLs -> ["/uploads/products/xxx.png", ...]
+        sizes       : formData.sizes || []
       };
 
       await productService.createProduct(productData);
@@ -370,7 +374,8 @@ const ProductManagement = () => {
         category    : formData.category,
         stock       : parseInt(formData.stock) || 0,
         status      : formData.status,
-        images      : uploadedImages.length > 0 ? uploadedImages : formData.images
+        images      : uploadedImages.length > 0 ? uploadedImages : formData.images,
+        sizes       : formData.sizes || []
       };
 
       await productService.updateProduct(selectedProduct.id, productData);
@@ -426,7 +431,8 @@ const ProductManagement = () => {
       category    : typeof product.category === 'string' ? product.category : product.category?.name || '',
       stock       : product.stock?.toString() || '0',
       status      : product.status || 'active',
-      images      : product.images || []
+      images      : product.images || [],
+      sizes       : Array.isArray(product.sizes) ? product.sizes : []
     });
 
     // Pré-remplir les aperçus avec les images actuelles
@@ -683,6 +689,44 @@ const ProductManagement = () => {
                     <option key={cat.id} value={cat.name}>{cat.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tailles disponibles
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {AVAILABLE_SIZES.map((size) => {
+                    const selected = (formData.sizes || []).includes(size);
+                    return (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => {
+                          setFormData((prev) => {
+                            const current = prev.sizes || [];
+                            return {
+                              ...prev,
+                              sizes: current.includes(size)
+                                ? current.filter((s) => s !== size)
+                                : [...current, size]
+                            };
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                          selected
+                            ? 'bg-gray-900 text-white border-gray-900'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-900'
+                        }`}
+                      >
+                        {size}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Cliquez pour ajouter/retirer une taille. Affichée dans la description publique.
+                </p>
               </div>
 
               <div>

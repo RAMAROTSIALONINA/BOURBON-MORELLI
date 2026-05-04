@@ -33,6 +33,12 @@ const AdminLogin = () => {
         password: formData.password
       });
 
+      // Vérifier que l'utilisateur est bien admin
+      if (response.data.user.role !== 'admin') {
+        setError('Accès refusé : droits administratifs requis.');
+        return;
+      }
+
       // Stocker le token JWT réel
       localStorage.setItem('adminToken', response.data.token);
       localStorage.setItem('adminUser', JSON.stringify({
@@ -40,7 +46,7 @@ const AdminLogin = () => {
         email: response.data.user.email,
         role: response.data.user.role
       }));
-      
+
       navigate('/admin/dashboard');
     } catch (error) {
       setError(error.response?.data?.message || 'Email ou mot de passe incorrect');

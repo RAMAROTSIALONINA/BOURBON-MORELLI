@@ -31,12 +31,18 @@ const Account = () => {
       try {
         if (authService.isAuthenticated()) {
           const userInfo = authService.getUserInfo();
+          // Bloquer les admins sur l'espace client
+          if (userInfo?.role === 'admin') {
+            localStorage.removeItem('userToken');
+            localStorage.removeItem('userInfo');
+            navigate('/admin/login');
+            return;
+          }
           setUser(userInfo);
         } else {
           navigate('/login');
         }
       } catch (error) {
-        console.error('Erreur de chargement utilisateur:', error);
         navigate('/login');
       } finally {
         setLoading(false);

@@ -5,6 +5,7 @@ import axios from 'axios';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import authService from '../../services/authService';
+import { useCurrency } from '../../contexts/CurrencyContext';
 
 const BACKEND_URL = 'http://localhost:5003';
 
@@ -15,6 +16,45 @@ const resolveImageUrl = (url) => {
   if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
   return url;
 };
+
+// Normalise les commandes renvoyées par GET /api/orders (format authentifié)
+const normalizeOrders = (orders) =>
+  orders.map(order => {
+    let notesData = {};
+    try { notesData = order.notes ? JSON.parse(order.notes) : {}; } catch (e) {}
+
+    return {
+      id:             order.order_number || order.id,
+      order_number:   order.order_number,
+      date:           order.created_at,
+      status:         order.status,
+      total:          parseFloat(order.total_amount) || 0,
+      subtotal:       parseFloat(order.subtotal)     || 0,
+      customer_email: order.customer_email,
+      items: (order.items || []).map(it => ({
+        id:         it.id,
+        product_id: it.product_id,
+        name:       it.product_name || it.name,
+        quantity:   it.quantity,
+        price:      parseFloat(it.unit_price  || it.price) || 0,
+        image:      resolveImageUrl(it.product_image || it.image)
+      })),
+      shipping: {
+        address:           order.shipping_address  || notesData.shipping_address  || '',
+        city:              order.shipping_city      || notesData.shipping_city      || '',
+        postal_code:       order.shipping_postal_code || notesData.shipping_postal_code || '',
+        country:           order.shipping_country   || notesData.shipping_country   || '',
+        method:            'Livraison standard',
+        cost:              parseFloat(order.shipping_amount) || 0,
+        estimatedDelivery: new Date(new Date(order.created_at).getTime() + 5 * 86400000).toISOString()
+      },
+      payment: {
+        method:        notesData.payment_method || 'card',
+        status:        'paid',
+        transactionId: order.order_number
+      }
+    };
+  });
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -98,28 +138,42 @@ const Orders = () => {
 
   const loadOrders = useCallback(async () => {
     try {
-      // Récupérer l'email de l'utilisateur connecté
       const userInfo = authService.getUserInfo();
+      const token    = authService.getToken();
+
       if (!userInfo || !userInfo.email) {
-        console.log('Aucun utilisateur connecté');
         setOrders([]);
         setLoading(false);
         return;
       }
 
-      // Charger les commandes du client depuis le backend
-      const response = await axios.get(
+      // ── Tentative 1 : endpoint authentifié (utilise user_id) ──
+      if (token) {
+        try {
+          const res = await axios.get(`${BACKEND_URL}/api/orders`, {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { limit: 100 }
+          });
+
+          if (res.data?.success && Array.isArray(res.data.orders) && res.data.orders.length > 0) {
+            setOrders(normalizeOrders(res.data.orders));
+            return;
+          }
+        } catch (err) {
+          // token invalide ou route échoue → on essaie par email
+        }
+      }
+
+      // ── Tentative 2 : recherche par email (invité ou user_id manquant) ──
+      const res2 = await axios.get(
         `${BACKEND_URL}/api/orders/by-email/${encodeURIComponent(userInfo.email)}`
       );
-
-      if (response.data?.success && Array.isArray(response.data.orders)) {
-        // Normaliser les URL d'images
-        const ordersData = response.data.orders.map(order => ({
+      if (res2.data?.success && Array.isArray(res2.data.orders)) {
+        const ordersData = res2.data.orders.map(order => ({
           ...order,
           items: (order.items || []).map(it => ({ ...it, image: resolveImageUrl(it.image) }))
         }));
         setOrders(ordersData);
-        console.log(`✅ ${ordersData.length} commande(s) chargée(s) pour ${userInfo.email}`);
       } else {
         setOrders([]);
       }
@@ -139,7 +193,7 @@ const Orders = () => {
     const statusMap = {
       pending: {
         label: 'En attente',
-        color: 'text-yellow-600 bg-yellow-50',
+        color: 'text-gray-700 bg-gray-50',
         icon: Clock
       },
       processing: {
@@ -167,12 +221,7 @@ const Orders = () => {
     return statusMap[status] || statusMap.pending;
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'MGA'
-    }).format(price);
-  };
+  const { format: formatPrice } = useCurrency();
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -363,9 +412,10 @@ const Orders = () => {
                           {order.items.map((item) => (
                             <div key={item.id} className="flex items-center space-x-3">
                               <img
-                                src={item.image}
+                                src={resolveImageUrl(item.image) || '/images/BOURBON MORELLI.png'}
                                 alt={item.name}
                                 className="w-12 h-12 object-cover rounded"
+                                onError={(e) => { e.target.src = '/images/BOURBON MORELLI.png'; }}
                               />
                               <div className="flex-1">
                                 <p className="font-medium text-sm">{item.name}</p>
@@ -483,9 +533,10 @@ const Orders = () => {
                       {selectedOrder.items.map((item) => (
                         <div key={item.id} className="flex items-start space-x-4 pb-4 border-b">
                           <img
-                            src={item.image}
+                            src={resolveImageUrl(item.image) || '/images/BOURBON MORELLI.png'}
                             alt={item.name}
                             className="w-16 h-16 object-cover rounded"
+                            onError={(e) => { e.target.src = '/images/BOURBON MORELLI.png'; }}
                           />
                           <div className="flex-1">
                             <p className="font-medium">{item.name}</p>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import ProductGrid from '../components/ProductGrid';
 import { ArrowRight, Star, Truck, Shield, Sparkles } from 'lucide-react';
 import productServicePublic from '../services/productServicePublic';
+import cartService from '../services/cartService';
 
 // Base URL du backend (pour servir les images en bypassant le proxy React)
 const BACKEND_URL = 'http://localhost:5003';
@@ -26,22 +27,13 @@ const Home = () => {
       setLoading(true);
       
       try {
-        console.log('Chargement des produits depuis l\'API pour la page d\'accueil');
-        
-        // Récupérer tous les produits depuis l'API
         const productsData = await productServicePublic.getAllProducts();
-        
-        // Formater les produits pour le composant ProductGrid
+
         const formattedProducts = Array.isArray(productsData) ? productsData.map(product => {
-          const resolvedImages = product.images && product.images.length > 0 
-            ? product.images.map(u => resolveImageUrl(u)) 
+          const resolvedImages = product.images && product.images.length > 0
+            ? product.images.map(u => resolveImageUrl(u))
             : ['/images/placeholder-product.jpg'];
-          
-          console.log(`=== HOME DEBUG - Produit: ${product.name} ===`);
-          console.log('Images brutes API:', product.images);
-          console.log('Images résolues:', resolvedImages);
-          console.log('Nombre d\'images:', resolvedImages.length);
-          
+
           return {
             id: product.id,
             name: product.name,
@@ -63,14 +55,9 @@ const Home = () => {
         // Prendre seulement les produits actifs (featured) pour la section "featured"
         const activeProducts = formattedProducts.filter(product => product.featured);
         setFeaturedProducts(activeProducts);
-        
-        console.log('Produits chargés pour l\'accueil:', activeProducts.length, 'produits actifs');
-        
+
       } catch (error) {
-        console.error('Erreur lors du chargement des produits pour l\'accueil:', error);
-        
-        // En cas d'erreur, utiliser les données mockées comme fallback
-        console.log('Fallback vers les données mockées pour l\'accueil');
+        // Fallback vers les données mockées
         
         const mockProducts = [
           {
@@ -147,27 +134,14 @@ const Home = () => {
     loadProducts();
   }, []);
 
-  const handleAddToCart = (product) => {
-    // Ajouter au panier (simulation)
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const existingItem = cart.find(item => item.id === product.id);
-    
-    if (existingItem) {
-      existingItem.quantity += 1;
-    } else {
-      cart.push({
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        image: product.images?.[0],
-        quantity: 1
-      });
+  const handleAddToCart = (product, quantity = 1) => {
+    const result = cartService.addToCart({
+      ...product,
+      stock_quantity: product.stock ?? product.inventory_quantity ?? 0
+    }, quantity);
+    if (result && result.success === false && result.reason === 'stock_exceeded') {
+      alert(`Stock insuffisant. Il ne reste que ${result.available} article(s) disponible(s).`);
     }
-    
-    localStorage.setItem('cart', JSON.stringify(cart));
-    
-    // Afficher une notification (à implémenter)
-    console.log('Produit ajouté au panier:', product.name);
   };
 
   const handleAddToWishlist = (product, isAdded) => {
@@ -355,7 +329,7 @@ const Home = () => {
                     <Star
                       key={i}
                       className={`w-5 h-5 ${
-                        i < testimonial.rating ? 'text-yellow-400 fill-current' : 'text-neutral-300'
+                        i < testimonial.rating ? 'text-gray-600 fill-current' : 'text-neutral-300'
                       }`}
                     />
                   ))}

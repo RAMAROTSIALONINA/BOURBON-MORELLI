@@ -62,6 +62,7 @@ router.get('/', async (req, res) => {
       category: product.category_name || 'Non catégorisé',
       category_slug: product.category_slug,
       brand: product.brand,
+      sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
       status: product.status,
       featured: product.featured,
       images: imagesByProduct[product.id] || [],
@@ -144,6 +145,7 @@ router.get('/:id', async (req, res) => {
       category: product.category_name || 'Non catégorisé',
       category_slug: product.category_slug,
       brand: product.brand,
+      sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
       status: product.status,
       featured: product.featured,
       stock: product.stock,
@@ -226,6 +228,7 @@ router.get('/category/:categoryName', async (req, res) => {
       category: product.category_name || 'Non catégorisé',
       category_slug: product.category_slug,
       brand: product.brand,
+      sizes: product.sizes ? String(product.sizes).split(',').map(s => s.trim()).filter(Boolean) : [],
       status: product.status,
       featured: product.featured,
       images: imagesByProduct[product.id] || [],
@@ -247,6 +250,29 @@ router.get('/category/:categoryName', async (req, res) => {
       error: 'Erreur serveur',
       message: 'Impossible de récupérer les produits de cette catégorie'
     });
+  }
+});
+
+// GET /api/public/products/:id/reviews - Liste publique des avis approuvés d'un produit
+router.get('/:id/reviews', async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    const productId = req.params.id;
+    const rows = await query(
+      `SELECT pr.id, pr.product_id, pr.user_id, pr.rating, pr.title, pr.content,
+              pr.is_verified, pr.created_at,
+              u.first_name, u.last_name
+       FROM product_reviews pr
+       LEFT JOIN users u ON u.id = pr.user_id
+       WHERE pr.product_id = ?
+         AND (pr.is_approved = 1 OR pr.is_approved IS NULL)
+       ORDER BY pr.created_at DESC`,
+      [productId]
+    );
+    res.json({ reviews: rows, total: rows.length });
+  } catch (err) {
+    console.error('Erreur GET /public/products/:id/reviews:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

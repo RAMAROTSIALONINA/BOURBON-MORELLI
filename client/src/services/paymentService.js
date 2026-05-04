@@ -36,6 +36,18 @@ const getTempAdminToken = async () => {
 };
 
 const paymentService = {
+  // Récupérer l'historique complet des transactions
+  getTransactionHistory: async () => {
+    try {
+      const config = await getAuthConfig();
+      const response = await axios.get(`${API_BASE_URL}/payments/history`, config);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la récupération de l\'historique:', error);
+      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer l\'historique' };
+    }
+  },
+
   // Récupérer tous les paiements
   getAllPayments: async () => {
     try {

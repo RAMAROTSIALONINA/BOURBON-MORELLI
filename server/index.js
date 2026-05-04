@@ -21,6 +21,11 @@ const uploadRoutes = require('./routes/upload');
 const adminStatsRoutes = require('./routes/admin_stats');
 const adminAnalyticsRoutes = require('./routes/admin_analytics');
 const adminReportsRoutes = require('./routes/admin_reports');
+const contactRoutes = require('./routes/contact');
+const footerRoutes = require('./routes/footer');
+const footerPublicRoutes = require('./routes/footer_public');
+const siteSettingsRoutes = require('./routes/site_settings');
+const wishlistRoutes = require('./routes/wishlist');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -50,20 +55,27 @@ app.use(compression());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
+// Rate limiting — permissif en dev, strict en prod
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 300 : 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
     error: 'Trop de requêtes, veuillez réessayer plus tard.'
-  }
+  },
+  // Ne pas limiter les fichiers statiques ni le health check
+  skip: (req) => req.path === '/health' || req.path.startsWith('/uploads')
 });
 
 app.use('/api/', limiter);
+
+// Stripe webhook needs raw body before JSON parsing
+app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -91,6 +103,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/public/products', productPublicRoutes);
+app.use('/api/public/footer', footerPublicRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
@@ -101,6 +114,10 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/admin', adminStatsRoutes);
 app.use('/api/admin', adminAnalyticsRoutes);
 app.use('/api/admin/reports', adminReportsRoutes);
+app.use('/api/admin/footer', footerRoutes);
+app.use('/api/contact', contactRoutes);
+app.use('/api/site-settings', siteSettingsRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   ShoppingBag,
@@ -32,21 +32,27 @@ const formatPrice = (v) =>
 const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
 const DashboardOverview = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
+  const handleAuthError = useCallback(() => {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    navigate('/admin/login');
+  }, [navigate]);
+
   const loadStats = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setRefreshing(true);
     try {
-      let token = localStorage.getItem('adminToken');
+      const token = localStorage.getItem('adminToken');
       if (!token) {
-        const t = await axios.get(`${BACKEND_URL}/api/users/admin/temp-token`);
-        token = t.data.token;
-        localStorage.setItem('adminToken', token);
+        handleAuthError();
+        return;
       }
       const response = await axios.get(`${BACKEND_URL}/api/admin/dashboard-stats`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -54,13 +60,16 @@ const DashboardOverview = () => {
       setStats(response.data);
       setError(null);
     } catch (err) {
-      console.error('Erreur dashboard:', err);
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        handleAuthError();
+        return;
+      }
       setError(err.response?.data?.message || 'Impossible de charger les statistiques');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [handleAuthError]);
 
   useEffect(() => {
     loadStats();
@@ -160,9 +169,9 @@ const DashboardOverview = () => {
       {totalAlerts > 0 && (
         <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-neutral-100 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            <AlertTriangle className="w-5 h-5 text-gray-600" />
             <h3 className="font-semibold text-neutral-900">Actions requises</h3>
-            <span className="ml-auto text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+            <span className="ml-auto text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full font-medium">
               {totalAlerts}
             </span>
           </div>
@@ -183,7 +192,7 @@ const DashboardOverview = () => {
             )}
             {alerts.lowStock > 0 && (
               <AlertRow
-                dotColor="bg-amber-500"
+                dotColor="bg-gray-500"
                 text={<><strong>{alerts.lowStock}</strong> produit(s) en stock faible</>}
                 link="/admin/products"
               />

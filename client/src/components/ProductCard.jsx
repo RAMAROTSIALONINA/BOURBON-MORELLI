@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ShoppingCart, Heart, Star, Eye } from 'lucide-react';
 import ImagePlaceholder from './ImagePlaceholder';
 import { Link } from 'react-router-dom';
-import productDataService from '../services/productDataService';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { useWishlist } from '../contexts/WishlistContext';
 
 // Base URL du backend (pour servir les images en bypassant le proxy React)
 const BACKEND_URL = 'http://localhost:5003';
@@ -19,13 +20,9 @@ const resolveImageUrl = (url) => {
 const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
   const [currentImage, setCurrentImage] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
-  const [isInWishlist, setIsInWishlist] = useState(false);
-
-  // Vérifier si le produit est déjà dans les favoris au chargement
-  useEffect(() => {
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    setIsInWishlist(wishlist.some(item => item.id === product.id));
-  }, [product.id]);
+  const { format: formatPriceCtx } = useCurrency();
+  const { isInWishlist: isInWL, toggle: toggleWL } = useWishlist();
+  const isInWishlist = isInWL(product.id);
 
   // Au survol : afficher automatiquement la 2e image si dispo, sinon garder la 1ère
   const displayedImageIndex = isHovered && product.images?.length > 1 ? 1 : currentImage;
@@ -33,43 +30,25 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
   const handleAddToCart = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onAddToCart?.(product);
+    // Utiliser l'image actuellement sélectionnée (via les points de pagination)
+    const selectedImage =
+      (product.images && product.images[currentImage]) || product.image_url || product.images?.[0];
+    const productWithSelectedImage = {
+      ...product,
+      image_url: selectedImage,
+      image: selectedImage
+    };
+    onAddToCart?.(productWithSelectedImage);
   };
 
-  const handleAddToWishlist = (e) => {
+  const handleAddToWishlist = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    const newIsInWishlist = !isInWishlist;
-    
-    if (newIsInWishlist) {
-      // Ajouter aux favoris en utilisant le service centralisé
-      const wishlistItem = productDataService.formatForWishlist(product);
-      
-      wishlist.push(wishlistItem);
-      console.log(`"${product.name}" ajouté aux favoris`);
-    } else {
-      // Retirer des favoris
-      const updatedWishlist = wishlist.filter(item => item.id !== product.id);
-      localStorage.setItem('wishlist', JSON.stringify(updatedWishlist));
-      console.log(`"${product.name}" retiré des favoris`);
-      return; // Sortir car on a déjà mis à jour le localStorage
-    }
-    
-    localStorage.setItem('wishlist', JSON.stringify(wishlist));
-    setIsInWishlist(newIsInWishlist);
-    
-    // Notifier le composant parent
-    onAddToWishlist?.(product, newIsInWishlist);
+    const ok = await toggleWL(product.id);
+    if (ok) onAddToWishlist?.(product, !isInWishlist);
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  const formatPrice = (price) => formatPriceCtx(price);
 
   const getDiscountPercentage = (price, comparePrice) => {
     if (!comparePrice || comparePrice <= price) return null;
@@ -206,7 +185,7 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
                   key={i}
                   className={`w-4 h-4 ${
                     i < (product.rating || 4)
-                      ? 'text-yellow-400 fill-current'
+                      ? 'text-gray-600 fill-current'
                       : 'text-neutral-300'
                   }`}
                 />
@@ -216,6 +195,30 @@ const ProductCard = ({ product, onAddToCart, onAddToWishlist }) => {
               ({product.reviews_count || 0})
             </span>
           </div>
+
+          {/* Tailles disponibles */}
+          {Array.isArray(product.sizes) && product.sizes.length > 0 ? (
+            <div className="mb-3">
+              <div className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Tailles disponibles</div>
+              <div className="flex flex-wrap gap-1">
+                {product.sizes.map((size) => (
+                  <span
+                    key={size}
+                    className="px-2 py-0.5 text-xs font-medium bg-neutral-100 text-neutral-700 border border-neutral-200 rounded"
+                  >
+                    {size}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <div className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Taille</div>
+              <div className="text-xs text-neutral-600">
+                Taille unique
+              </div>
+            </div>
+          )}
 
           {/* Price */}
           <div className="flex items-center space-x-2 mb-4">

@@ -46,9 +46,17 @@ const ProductGrid = ({ products, loading, onAddToCart, onAddToWishlist }) => {
       product.price >= filters.priceRange[0] && product.price <= filters.priceRange[1]
     );
 
+    // Apply size filter
+    if (filters.sizes.length > 0) {
+      filtered = filtered.filter(product =>
+        Array.isArray(product.sizes) &&
+        product.sizes.some(s => filters.sizes.includes(s))
+      );
+    }
+
     // Apply stock filter
     if (filters.inStock) {
-      filtered = filtered.filter(product => 
+      filtered = filtered.filter(product =>
         product.inventory_quantity > 0
       );
     }

@@ -1,26 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
   Edit, 
-  Trash2, 
-  Search, 
-  Plus,
-  Eye,
+  Trash2,
+  Search,
+  UserCheck,
+  UserX,
   Mail,
   Phone,
   Calendar,
   Filter,
+  Eye,
   Download,
-  UserCheck,
-  UserX,
   X
 } from 'lucide-react';
 import customerService from '../../services/customerService';
 import useNotificationStore from '../../services/notificationService';
 
 const CustomerManagement = () => {
-  const navigate = useNavigate();
   const addNotification = useNotificationStore(s => s.addNotification);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -260,7 +257,7 @@ const CustomerManagement = () => {
         </div>
         <div className="bg-white p-4 rounded-xl border border-neutral-200">
           <p className="text-xs text-neutral-500 uppercase tracking-wide">Invités</p>
-          <p className="text-2xl font-bold text-amber-600 mt-1">
+          <p className="text-2xl font-bold text-gray-700 mt-1">
             {customers.filter(c => c.type === 'guest').length}
           </p>
         </div>
@@ -397,7 +394,7 @@ const CustomerManagement = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {customer.type === 'guest' ? (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
                           Invité
                         </span>
                       ) : (

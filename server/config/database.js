@@ -43,15 +43,19 @@ async function query(sql, params = []) {
       return param;
     });
     
-    console.log('SQL:', sql);
-    console.log('Params:', filteredParams);
-    
+    if (process.env.SQL_DEBUG === 'true') {
+      console.log('SQL:', sql);
+      console.log('Params:', filteredParams);
+    }
+
     const [rows] = await pool.execute(sql, filteredParams);
     return rows;
   } catch (error) {
     console.error('Erreur SQL:', error.message);
-    console.error('SQL Query:', sql);
-    console.error('Parameters:', params);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('SQL Query:', sql);
+      console.error('Parameters:', params);
+    }
     throw error;
   }
 }

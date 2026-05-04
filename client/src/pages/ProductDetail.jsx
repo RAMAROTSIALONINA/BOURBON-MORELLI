@@ -12,6 +12,9 @@ import {
   Share2
 } from 'lucide-react';
 import ImagePlaceholder from '../components/ImagePlaceholder';
+import ProductReviews from '../components/ProductReviews';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { useWishlist } from '../contexts/WishlistContext';
 
 // Base URL du backend (pour servir les images en bypassant le proxy React)
 const BACKEND_URL = 'http://localhost:5003';
@@ -30,9 +33,10 @@ const ProductDetail = ({ onAddToCart }) => {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState(null);
+  const [selectedSize, setSelectedSize] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [isInWishlist, setIsInWishlist] = useState(false);
+  const { isInWishlist: isInWL, toggle: toggleWL } = useWishlist();
 
   // Fonction pour cliquer sur une image et la mettre en grand
   const handleImageClick = (index) => {
@@ -66,6 +70,7 @@ const ProductDetail = ({ onAddToCart }) => {
                 inventory_quantity: foundProduct.stock || 0,
                 category_name: typeof foundProduct.category === 'string' ? foundProduct.category : foundProduct.category?.name,
                 compare_price: foundProduct.compare_price || null,
+                sizes: foundProduct.sizes || [],
                 variants: [],
                 similar_products: []
               };
@@ -107,12 +112,13 @@ const ProductDetail = ({ onAddToCart }) => {
             price: 89.99,
             compare_price: 119.99,
             description: 'Une nappe de table élégante en coton premium, parfaite pour les occasions spéciales. Cette nappe apporte une touche de sophistication à votre table avec sa texture douce et son design intemporel.',
-            images: ['/images/Nape%20de%20table.PNG', '/images/Nappe%20de%20table1.PNG', '/images/Nape%20de%20table2.PNG'],
+            images: ['/images/Nape%20de%20table.PNG', '/images/Nappe%20de%20table1.PNG', '/images/Nappe%20de%20table2.PNG'],
             category: { name: 'Nappes', slug: 'nappes' },
             featured: true,
             rating: 5,
             reviews_count: 12,
             inventory_quantity: 5,
+            sizes: ['120x180cm', '140x200cm', '160x240cm'],
             variants: [
               {
                 id: 1,
@@ -152,6 +158,7 @@ const ProductDetail = ({ onAddToCart }) => {
             rating: 4,
             reviews_count: 8,
             inventory_quantity: 3,
+            sizes: ['S', 'M', 'L', 'XL'],
             variants: [
               {
                 id: 3,
@@ -191,6 +198,7 @@ const ProductDetail = ({ onAddToCart }) => {
             rating: 4,
             reviews_count: 6,
             inventory_quantity: 15,
+            sizes: ['S', 'M', 'L', 'XL', 'XXL'],
             variants: [
               {
                 id: 5,
@@ -230,6 +238,7 @@ const ProductDetail = ({ onAddToCart }) => {
             rating: 5,
             reviews_count: 10,
             inventory_quantity: 8,
+            sizes: ['30', '32', '34', '36', '38', '40'],
             variants: [
               {
                 id: 7,
@@ -269,6 +278,7 @@ const ProductDetail = ({ onAddToCart }) => {
             rating: 4,
             reviews_count: 8,
             inventory_quantity: 3,
+            sizes: ['S', 'M', 'L', 'XL'],
             variants: [
               {
                 id: 2,
@@ -325,28 +335,48 @@ const ProductDetail = ({ onAddToCart }) => {
     if (!product) return;
     if (currentStock === 0) return;
 
-    // Ajouter la quantité demandée en appelant le handler parent
-    // (qui utilise cartService.addToCart + met à jour le compteur du header)
-    for (let i = 0; i < quantity; i++) {
-      onAddToCart?.(product);
+    // Vérifier si une taille est sélectionnée (quand des tailles sont disponibles)
+    if (product.sizes && product.sizes.length > 0 && !selectedSize) {
+      alert('Veuillez sélectionner une taille');
+      return;
     }
-    console.log(`✅ "${product.name}" ajouté au panier (x${quantity})`);
 
-    // Feedback utilisateur
-    alert(`${product.name} ajouté au panier (quantité : ${quantity})`);
+    // Utiliser l'image sélectionnée dans la galerie (miniature cliquée)
+    const selectedImage =
+      (product.images && product.images[selectedImageIndex]) || product.image_url || product.images?.[0];
+
+    // Créer le produit avec la taille sélectionnée, l'image choisie et le stock disponible
+    const base = {
+      ...product,
+      image_url: selectedImage,
+      image: selectedImage,
+      stock_quantity: currentStock  // transmis à cartService pour limiter la quantité
+    };
+    const productWithSize = selectedSize
+      ? { ...base, selectedSize, name: `${product.name} - Taille ${selectedSize}` }
+      : base;
+
+    // Ajouter la quantité demandée en un seul appel (évite les appels en boucle)
+    const result = onAddToCart?.(productWithSize, quantity);
+
+    const sizeInfo = selectedSize ? ` (Taille ${selectedSize})` : '';
+
+    if (result && result.success === false && result.reason === 'stock_exceeded') {
+      alert(`Stock insuffisant. Il ne reste que ${result.available} article(s) disponible(s) (vous en avez déjà ${result.current} dans votre panier).`);
+      return;
+    }
+
+    console.log(`✅ "${product.name}${sizeInfo}" ajouté au panier (x${quantity})`);
+    alert(`${product.name}${sizeInfo} ajouté au panier (quantité : ${quantity})`);
   };
 
-  const handleAddToWishlist = () => {
-    setIsInWishlist(!isInWishlist);
-    console.log(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris:', product.name);
+  const isInWishlist = product ? isInWL(product.id) : false;
+  const handleAddToWishlist = async () => {
+    if (!product) return;
+    await toggleWL(product.id);
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  const { format: formatPrice } = useCurrency();
 
   const getDiscountPercentage = (price, comparePrice) => {
     if (!comparePrice || comparePrice <= price) return null;
@@ -416,11 +446,16 @@ const ProductDetail = ({ onAddToCart }) => {
                   {/* Toutes les images en vignettes (y compris l'image principale) */}
                   <div className="flex flex-wrap gap-2">
                     {product.images.map((image, index) => (
-                      <div key={index} className={`relative group rounded-lg overflow-hidden bg-neutral-50 w-20 h-20 flex-shrink-0 cursor-pointer transition-all ${
-                        selectedImageIndex === index
-                          ? 'ring-2 ring-primary-500'
-                          : 'hover:opacity-80 opacity-90'
-                      }`}>
+                      <div
+                        key={index}
+                        onMouseEnter={() => setSelectedImageIndex(index)}
+                        onClick={() => handleImageClick(index)}
+                        className={`relative group rounded-lg overflow-hidden bg-neutral-50 w-20 h-20 flex-shrink-0 cursor-pointer transition-all ${
+                          selectedImageIndex === index
+                            ? 'ring-2 ring-primary-500'
+                            : 'hover:opacity-80 opacity-90'
+                        }`}
+                      >
                         <img
                           src={resolveImageUrl(image)}
                           alt={`${product.name} - vue ${index + 1}`}
@@ -429,7 +464,6 @@ const ProductDetail = ({ onAddToCart }) => {
                             e.target.onerror = null;
                             e.target.src = '/images/BOURBON MORELLI.png';
                           }}
-                          onClick={() => handleImageClick(index)}
                         />
                         
                       </div>
@@ -471,7 +505,7 @@ const ProductDetail = ({ onAddToCart }) => {
                     <Star
                       key={i}
                       className={`w-5 h-5 ${
-                        i < product.rating ? 'text-yellow-400 fill-current' : 'text-neutral-300'
+                        i < product.rating ? 'text-gray-600 fill-current' : 'text-neutral-300'
                       }`}
                     />
                   ))}
@@ -500,6 +534,33 @@ const ProductDetail = ({ onAddToCart }) => {
                 {product.description}
               </p>
             </div>
+
+            {/* Tailles disponibles */}
+            {product.sizes && product.sizes.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Tailles disponibles</h3>
+                <div className="flex flex-wrap gap-2">
+                  {product.sizes.map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => setSelectedSize(size)}
+                      className={`px-4 py-2 border rounded-lg transition-colors ${
+                        selectedSize === size
+                          ? 'border-primary-500 bg-primary-50 text-primary-700'
+                          : 'border-neutral-300 hover:border-primary-500 hover:bg-primary-50'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+                {selectedSize && (
+                  <p className="text-sm text-neutral-600 mt-2">
+                    Taille sélectionnée : {selectedSize}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Variantes */}
             {product.variants && product.variants.length > 0 && (
@@ -624,6 +685,9 @@ const ProductDetail = ({ onAddToCart }) => {
           </div>
         </div>
 
+        {/* Avis clients */}
+        <ProductReviews productId={product.id} />
+
         {/* Produits similaires */}
         {product.similar_products && product.similar_products.length > 0 && (
           <div className="mt-16">
@@ -634,7 +698,7 @@ const ProductDetail = ({ onAddToCart }) => {
               {product.similar_products.map((similarProduct) => (
                 <div key={similarProduct.id} className="card-luxury p-4">
                   <img
-                    src={similarProduct.images?.[0] || '/images/BOURBON MORELLI.png'}
+                    src={resolveImageUrl(similarProduct.images?.[0]) || '/images/BOURBON MORELLI.png'}
                     alt={similarProduct.name}
                     className="w-full h-48 object-cover rounded-lg mb-4"
                   />

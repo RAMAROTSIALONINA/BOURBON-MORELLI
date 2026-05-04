@@ -463,6 +463,125 @@ router.get('/reviews', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/users/reviews - Créer un avis
+router.post('/reviews', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { product_id, rating, title, content } = req.body;
+
+    if (!product_id || !rating) {
+      return res.status(400).json({ error: 'product_id et rating sont requis' });
+    }
+    const r = parseInt(rating);
+    if (isNaN(r) || r < 1 || r > 5) {
+      return res.status(400).json({ error: 'rating doit être entre 1 et 5' });
+    }
+
+    // Vérifie que le produit existe
+    const prodRows = await query('SELECT id FROM products WHERE id = ? LIMIT 1', [product_id]);
+    if (prodRows.length === 0) {
+      return res.status(404).json({ error: 'Produit introuvable' });
+    }
+
+    // Un seul avis par user/produit
+    const existing = await query(
+      'SELECT id FROM product_reviews WHERE user_id = ? AND product_id = ? LIMIT 1',
+      [userId, product_id]
+    );
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'Vous avez déjà laissé un avis pour ce produit' });
+    }
+
+    const result = await query(
+      `INSERT INTO product_reviews (product_id, user_id, rating, title, content)
+       VALUES (?, ?, ?, ?, ?)`,
+      [product_id, userId, r, title || null, content || null]
+    );
+
+    const [review] = await query(
+      `SELECT pr.*, p.name as product_name, p.slug as product_slug,
+              (SELECT image_url FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as product_image
+       FROM product_reviews pr
+       LEFT JOIN products p ON pr.product_id = p.id
+       WHERE pr.id = ?`,
+      [result.insertId]
+    );
+
+    res.status(201).json({ message: 'Avis créé', review });
+  } catch (error) {
+    console.error('Erreur création avis:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: 'Impossible de créer l\'avis' });
+  }
+});
+
+// PUT /api/users/reviews/:id - Modifier son avis
+router.put('/reviews/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const reviewId = req.params.id;
+    const { rating, title, content } = req.body;
+
+    const rows = await query(
+      'SELECT id, user_id FROM product_reviews WHERE id = ? LIMIT 1',
+      [reviewId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Avis introuvable' });
+    if (rows[0].user_id !== userId) return res.status(403).json({ error: 'Non autorisé' });
+
+    const fields = [];
+    const params = [];
+    if (rating !== undefined) {
+      const r = parseInt(rating);
+      if (isNaN(r) || r < 1 || r > 5) return res.status(400).json({ error: 'rating invalide' });
+      fields.push('rating = ?'); params.push(r);
+    }
+    if (title !== undefined)   { fields.push('title = ?');   params.push(title); }
+    if (content !== undefined) { fields.push('content = ?'); params.push(content); }
+
+    if (fields.length === 0) return res.status(400).json({ error: 'Aucun champ à modifier' });
+
+    fields.push('updated_at = NOW()');
+    params.push(reviewId);
+
+    await query(`UPDATE product_reviews SET ${fields.join(', ')} WHERE id = ?`, params);
+
+    const [review] = await query(
+      `SELECT pr.*, p.name as product_name, p.slug as product_slug,
+              (SELECT image_url FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as product_image
+       FROM product_reviews pr
+       LEFT JOIN products p ON pr.product_id = p.id
+       WHERE pr.id = ?`,
+      [reviewId]
+    );
+
+    res.json({ message: 'Avis mis à jour', review });
+  } catch (error) {
+    console.error('Erreur modification avis:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /api/users/reviews/:id
+router.delete('/reviews/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const reviewId = req.params.id;
+
+    const rows = await query(
+      'SELECT id, user_id FROM product_reviews WHERE id = ? LIMIT 1',
+      [reviewId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Avis introuvable' });
+    if (rows[0].user_id !== userId) return res.status(403).json({ error: 'Non autorisé' });
+
+    await query('DELETE FROM product_reviews WHERE id = ?', [reviewId]);
+    res.json({ message: 'Avis supprimé' });
+  } catch (error) {
+    console.error('Erreur suppression avis:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Routes admin
 router.get('/admin/list', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -498,9 +617,6 @@ router.get('/admin/list', authenticateToken, requireAdmin, async (req, res) => {
       LIMIT ${validatedLimit} OFFSET ${validatedOffset}
     `;
 
-    console.log('Requête SQL:', usersQuery);
-    console.log('Paramètres WHERE:', params);
-    
     const users = await query(usersQuery, params);
 
     const [countRow] = await query(
@@ -590,16 +706,13 @@ router.post('/admin/create', authenticateToken, requireAdmin, [
     });
 
   } catch (error) {
-    console.error('=== ERREUR CRÉATION UTILISATEUR ===');
-    console.error('Erreur:', error.message);
-    console.error('Stack:', error.stack);
-    console.error('Données reçues:', req.body);
-    console.error('Type d\'erreur:', error.name);
-    
+    console.error('Erreur création utilisateur:', error.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Stack:', error.stack);
+    }
     res.status(500).json({
       error: 'Erreur serveur',
-      message: 'Impossible de créer l\'utilisateur',
-      details: error.message
+      message: 'Impossible de créer l\'utilisateur'
     });
   }
 });
@@ -883,10 +996,15 @@ router.get('/admin/temp-token', devOnly, async (req, res) => {
     const jwt = require('jsonwebtoken');
 
     // Générer un token admin FRAIS (valide 7 jours)
+    // Trouver un admin réel en base
+    const admins = await query("SELECT id, email, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+    if (admins.length === 0) {
+      return res.status(404).json({ error: 'Aucun admin', message: 'Aucun compte administrateur en base' });
+    }
     const payload = {
-      id: 1,
-      email: 'admin@bourbonmorelli.com',
-      role: 'admin'
+      userId: admins[0].id,
+      email: admins[0].email,
+      role: admins[0].role
     };
     const secret = process.env.JWT_SECRET || 'your-secret-key';
     const adminToken = jwt.sign(payload, secret, { expiresIn: '7d' });
@@ -909,90 +1027,29 @@ router.get('/admin/temp-token', devOnly, async (req, res) => {
 // GET /api/users/admin/dev-bypass - Endpoint de contournement pour développement (sans auth)
 router.get('/admin/dev-bypass', devOnly, async (req, res) => {
   try {
-    console.log('Endpoint de contournement utilisé - Mode développement');
-    
-    // Données mockées pour développement
-    const mockUsers = [
-      {
-        id: 1,
-        first_name: 'Admin',
-        last_name: 'User',
-        email: 'admin@bourbonmorelli.com',
-        phone: '+33 6 12 34 56 78',
-        role: 'admin',
-        status: 'active',
-        order_count: 0,
-        total_spent: 0,
-        created_at: '2024-01-01'
-      },
-      {
-        id: 2,
-        first_name: 'Jean',
-        last_name: 'Dupont',
-        email: 'jean.dupont@email.com',
-        phone: '+33 6 12 34 56 78',
-        role: 'client',
-        status: 'active',
-        order_count: 5,
-        total_spent: 1234.50,
-        created_at: '2024-01-15'
-      },
-      {
-        id: 3,
-        first_name: 'Marie',
-        last_name: 'Martin',
-        email: 'marie.martin@email.com',
-        phone: '+33 6 23 45 67 89',
-        role: 'client',
-        status: 'active',
-        order_count: 3,
-        total_spent: 567.89,
-        created_at: '2024-02-20'
-      }
-    ];
-
+    const users = await query(`
+      SELECT id, first_name, last_name, email, phone, role, status, created_at
+      FROM users
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
     res.json({
-      users: mockUsers,
+      users,
       pagination: {
         current_page: 1,
-        per_page: 10,
-        total: mockUsers.length,
+        per_page: 20,
+        total: users.length,
         total_pages: 1,
         has_next: false,
         has_prev: false
       },
-      warning: 'Mode développement - Données mockées'
+      warning: 'Mode développement - Données réelles sans authentification'
     });
   } catch (error) {
     console.error('Erreur dans le bypass de développement:', error);
     res.status(500).json({
       error: 'Erreur serveur',
       message: 'Impossible de charger les données de développement'
-    });
-  }
-});
-
-// GET /api/users/admin/dev-stats - Statistiques de développement (sans auth)
-router.get('/admin/dev-stats', async (req, res) => {
-  try {
-    console.log('Stats de développement utilisées - Mode développement');
-    
-    const mockStats = {
-      total: 3,
-      active: 3,
-      admin: 1,
-      inactive: 0
-    };
-
-    res.json({
-      stats: mockStats,
-      warning: 'Mode développement - Données mockées'
-    });
-  } catch (error) {
-    console.error('Erreur dans les stats de développement:', error);
-    res.status(500).json({
-      error: 'Erreur serveur',
-      message: 'Impossible de charger les statistiques de développement'
     });
   }
 });

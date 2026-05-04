@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const { decreaseStockForOrder } = require('../services/stockService');
+const { sendOrderConfirmationById, sendOrderStatusEmailById } = require('../services/emailService');
 
 // Middleware pour vérifier l'authentification
 const authenticateToken = (req, res, next) => {
@@ -15,7 +17,12 @@ const authenticateToken = (req, res, next) => {
   try {
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    req.user = decoded;
+    // Le payload JWT utilise `userId`, pas `id`
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ error: 'Token invalide' });
+    }
+    // Normaliser : exposer `id` en plus de `userId` pour le reste des routes
+    req.user = { ...decoded, id: decoded.userId };
     next();
   } catch (error) {
     res.status(401).json({ error: 'Token invalide' });
@@ -25,12 +32,21 @@ const authenticateToken = (req, res, next) => {
 // GET /api/orders - Récupérer les commandes (admin ou utilisateur)
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Utilisateur non authentifié' });
+    }
+    
     const isAdmin = req.user.role === 'admin';
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
 
-    let whereClause = isAdmin ? '' : 'WHERE o.user_id = ?';
-    let params = isAdmin ? [] : [req.user.id];
+    // Récupère les commandes liées à l'utilisateur :
+    // - par user_id (commandes créées quand l'email correspondait au compte)
+    // - OU par email (commandes sans user_id mais même email → invité / ancien compte)
+    let whereClause = isAdmin
+      ? ''
+      : 'WHERE (o.user_id = ? OR (o.user_id IS NULL AND o.email = ?))';
+    let params = isAdmin ? [] : [req.user.id, req.user.email];
 
     if (status) {
       whereClause += (isAdmin ? 'WHERE' : 'AND') + ' o.status = ?';
@@ -142,6 +158,10 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET /api/orders/:id - Récupérer une commande spécifique
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Utilisateur non authentifié' });
+    }
+    
     const isAdmin = req.user.role === 'admin';
     const { id } = req.params;
 
@@ -159,7 +179,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     
     if (!isAdmin) {
       whereClause += ' AND o.user_id = ?';
-      params.push(req.user.id);
+      params.push(req.user?.id || null);
     }
 
     const [orders] = await connection.execute(`
@@ -251,13 +271,32 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       charset: 'utf8mb4'
     });
 
+    // Vérifier le statut actuel avant mise à jour (pour détecter première confirmation)
+    const [currentRows] = await connection.execute(
+      'SELECT status FROM orders WHERE id = ?', [id]
+    );
+    const previousStatus = currentRows.length ? currentRows[0].status : null;
+
     await connection.execute(`
-      UPDATE orders 
-      SET status = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ?
+      UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `, [status, id]);
 
     await connection.end();
+
+    // Décrémenter le stock UNE SEULE FOIS via le flag stock_decremented
+    if (status === 'confirmed') {
+      const { query: dbQuery } = require('../config/database');
+      const guard = await dbQuery(
+        `UPDATE orders SET stock_decremented = 1 WHERE id = ? AND stock_decremented = 0`,
+        [parseInt(id, 10)]
+      );
+      if (guard && guard.affectedRows > 0) {
+        await decreaseStockForOrder(parseInt(id, 10));
+        sendOrderConfirmationById(parseInt(id, 10)).catch(() => {}); // non-bloquant
+      }
+    } else if (['processing', 'shipped', 'delivered', 'cancelled'].includes(status)) {
+      sendOrderStatusEmailById(parseInt(id, 10), status).catch(() => {}); // non-bloquant
+    }
 
     res.json({
       success: true,
@@ -411,6 +450,40 @@ router.post('/public', async (req, res) => {
     });
 
     await connection.beginTransaction();
+
+    // ── Validation du stock pour chaque article ──────────────────────────
+    const productIds = items.map(i => i.product_id || i.id).filter(Boolean);
+    if (productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(',');
+      const [stockRows] = await connection.execute(
+        `SELECT product_id, quantity, allow_backorder, track_quantity
+         FROM inventory
+         WHERE product_id IN (${placeholders}) AND variant_id IS NULL`,
+        productIds
+      );
+      const stockMap = {};
+      stockRows.forEach(r => { stockMap[r.product_id] = r; });
+
+      for (const item of items) {
+        const pid = item.product_id || item.id;
+        const inv = stockMap[pid];
+        if (!inv || !inv.track_quantity) continue; // pas suivi → OK
+        if (inv.allow_backorder) continue;          // backorder → OK
+        const ordered = parseInt(item.quantity) || 1;
+        if (ordered > inv.quantity) {
+          await connection.rollback();
+          await connection.end();
+          return res.status(409).json({
+            error: 'Stock insuffisant',
+            message: `Le produit "${item.name}" n'est disponible qu'en ${inv.quantity} exemplaire(s) (demandé : ${ordered}).`,
+            product_id: pid,
+            available: inv.quantity,
+            requested: ordered
+          });
+        }
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     // Retrouver l'utilisateur par email (optionnel)
     let userId = null;

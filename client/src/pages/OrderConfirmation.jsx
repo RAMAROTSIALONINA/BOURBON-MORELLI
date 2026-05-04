@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Check, CreditCard, Wallet, Smartphone, XCircle, Shield } from 'lucide-react';
+import { Check, CreditCard, Smartphone, XCircle, Shield } from 'lucide-react';
+import { useCurrency } from '../contexts/CurrencyContext';
+import axios from 'axios';
+
+const BACKEND_URL = 'http://localhost:5003';
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url; // /images/... servi par CRA
+};
 
 const OrderConfirmation = () => {
   const location = useLocation();
@@ -14,7 +24,6 @@ const OrderConfirmation = () => {
   });
 
   const validatePaymentSecurity = useCallback((orderData, paymentMethod) => {
-    console.log('=== VALIDATION SÉCURITÉ PAIEMENT ===');
     
     // Vérifications de base
     if (!orderData) {
@@ -44,6 +53,7 @@ const OrderConfirmation = () => {
 
     // Validation spécifique par méthode de paiement
     switch (paymentMethod) {
+      case 'stripe': // Carte ou PayPal via Stripe (confirmé côté Stripe)
       case 'card':
         return validateCardPayment(orderData);
       case 'paypal':
@@ -59,60 +69,14 @@ const OrderConfirmation = () => {
     }
   }, []);
 
-  const validateCardPayment = (orderData) => {
-    const cardDetails = orderData.payment?.details;
-    
-    console.log('VALIDATION CARTE:', cardDetails);
-    
-    if (!cardDetails) {
-      return {
-        isValid: false,
-        message: 'Détails de carte de crédit manquants',
-        status: 'invalid'
-      };
-    }
-
-    // Vérifier le format du numéro de carte
-    const cardNumber = cardDetails.cardNumber?.replace(/\s/g, '');
-    if (!cardNumber || !/^\d{13,19}$/.test(cardNumber)) {
-      return {
-        isValid: false,
-        message: 'Numéro de carte invalide',
-        status: 'invalid'
-      };
-    }
-
-    // Vérifier la date d'expiration
-    const expiry = cardDetails.expiry;
-    if (!expiry || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(expiry)) {
-      return {
-        isValid: false,
-        message: 'Date d\'expiration invalide',
-        status: 'invalid'
-      };
-    }
-
-    // Vérifier le CVV
-    const cvv = cardDetails.cvv;
-    if (!cvv || !/^\d{3,4}$/.test(cvv)) {
-      return {
-        isValid: false,
-        message: 'CVV invalide',
-        status: 'invalid'
-      };
-    }
-
-    return {
-      isValid: true,
-      message: 'Paiement par carte validé avec succès',
-      status: 'valid'
-    };
+  const validateCardPayment = () => {
+    // Paiement traité et confirmé par Stripe — aucune revalidation locale nécessaire
+    return { isValid: true, message: 'Paiement par carte validé avec succès', status: 'valid' };
   };
 
   const validatePayPalPayment = (orderData) => {
     const paypalDetails = orderData.payment?.details;
     
-    console.log('VALIDATION PAYPAL:', paypalDetails);
     
     if (!paypalDetails) {
       return {
@@ -152,7 +116,6 @@ const OrderConfirmation = () => {
   const validateMobilePayment = (orderData) => {
     const mobileDetails = orderData.payment?.details;
     
-    console.log('VALIDATION MOBILE MONEY:', mobileDetails);
     
     if (!mobileDetails) {
       return {
@@ -201,65 +164,96 @@ const OrderConfirmation = () => {
   };
 
   useEffect(() => {
-    // Récupérer les données de la commande depuis l'état de navigation
+    const params = new URLSearchParams(location.search);
+    const redirectStatus = params.get('redirect_status');
+    const clientSecret = params.get('payment_intent_client_secret');
+
+    // Retour depuis un redirect Stripe (PayPal, etc.)
+    if (redirectStatus && clientSecret) {
+      if (redirectStatus === 'succeeded') {
+        setSecurityCheck({ isValid: true, message: 'Paiement confirmé par Stripe', status: 'valid' });
+
+        const paymentIntentId = params.get('payment_intent');
+
+        // 1. Essayer sessionStorage (peut être vide si le navigateur a effacé la session cross-origin)
+        const saved = sessionStorage.getItem('pendingOrder');
+        sessionStorage.removeItem('pendingOrder');
+
+        if (saved) {
+          // sessionStorage OK → utiliser les données locales
+          const orderData = JSON.parse(saved);
+          setOrder(orderData);
+          // Synchroniser côté serveur (non-bloquant)
+          if (paymentIntentId) {
+            axios.post(`${BACKEND_URL}/api/payments/stripe/complete-transaction`, {
+              payment_intent_id: paymentIntentId,
+              order_id: orderData?.id
+            }).catch(() => {});
+          }
+          setLoading(false);
+        } else if (paymentIntentId) {
+          // sessionStorage vide → récupérer les vraies données depuis le serveur
+          axios.get(`${BACKEND_URL}/api/payments/by-intent/${paymentIntentId}`)
+            .then(res => {
+              const orderData = res.data?.order;
+              if (orderData) {
+                setOrder(orderData);
+                // Synchroniser statut dans payment_transactions
+                axios.post(`${BACKEND_URL}/api/payments/stripe/complete-transaction`, {
+                  payment_intent_id: paymentIntentId,
+                  order_id: orderData.id
+                }).catch(() => {});
+              } else {
+                // Ultime fallback minimaliste
+                setOrder({ id: paymentIntentId, payment: { method: 'stripe', status: 'paid' }, items: [], subtotal: 0, shippingCost: 0, total: 0, shipping: {} });
+              }
+            })
+            .catch(() => {
+              setOrder({ id: paymentIntentId, payment: { method: 'stripe', status: 'paid' }, items: [], subtotal: 0, shippingCost: 0, total: 0, shipping: {} });
+            })
+            .finally(() => setLoading(false));
+          return; // setLoading(false) géré dans .finally()
+        } else {
+          setLoading(false);
+        }
+      } else {
+        setSecurityCheck({ isValid: false, message: 'Paiement non abouti ou annulé', status: 'invalid' });
+        setLoading(false);
+      }
+      return;
+    }
+
     if (location.state?.order) {
       const orderData = location.state.order;
       const paymentMethod = location.state.paymentMethod;
-      
-      console.log('=== SÉCURITÉ PAIEMENT ===');
-      console.log('Order:', orderData);
-      console.log('Payment Method:', paymentMethod);
-      
-      // Valider la sécurité du paiement
       const securityResult = validatePaymentSecurity(orderData, paymentMethod);
       setSecurityCheck(securityResult);
-      
-      if (securityResult.isValid) {
-        setOrder(orderData);
-        console.log('✅ SÉCURITÉ: Paiement validé avec succès');
-      } else {
-        console.log('❌ SÉCURITÉ: Paiement rejeté -', securityResult.message);
-      }
-      
+      if (securityResult.isValid) setOrder(orderData);
       setLoading(false);
     } else {
-      // Si pas de commande, rediriger vers le panier
-      console.log('❌ SÉCURITÉ: Aucune commande trouvée');
       navigate('/cart');
     }
   }, [location, navigate, validatePaymentSecurity]);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
+  const { format: formatCurrency } = useCurrency();
+
+  // Toujours afficher les montants dans la devise de la commande (EUR par défaut)
+  const formatPrice = (amount) => {
+    const currency = order?.currency || 'EUR';
+    if (currency === 'EUR') {
+      return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount || 0);
+    }
+    return formatCurrency(amount);
   };
 
   const getPaymentIcon = (method) => {
-    switch (method) {
-      case 'card':
-        return <CreditCard className="w-6 h-6" />;
-      case 'paypal':
-        return <Wallet className="w-6 h-6" />;
-      case 'mobile':
-        return <Smartphone className="w-6 h-6" />;
-      default:
-        return <CreditCard className="w-6 h-6" />;
-    }
+    if (method === 'mobile') return <Smartphone className="w-6 h-6" />;
+    return <CreditCard className="w-6 h-6" />;
   };
 
   const getPaymentMethodName = (method) => {
-    switch (method) {
-      case 'card':
-        return 'Carte de crédit';
-      case 'paypal':
-        return 'PayPal';
-      case 'mobile':
-        return 'Mobile Money';
-      default:
-        return 'Carte de crédit';
-    }
+    if (method === 'mobile') return 'Mobile Money';
+    return 'Carte / PayPal (Stripe)';
   };
 
   if (loading) {
@@ -343,9 +337,10 @@ const OrderConfirmation = () => {
                 {order.items.map((item) => (
                   <div key={item.id} className="flex items-center space-x-4 pb-4 border-b">
                     <img
-                      src={item.image || item.image_url || '/images/placeholder-product.jpg'}
+                      src={resolveImageUrl(item.image || item.image_url) || '/images/BOURBON MORELLI.png'}
                       alt={item.name}
                       className="w-16 h-16 object-cover rounded"
+                      onError={(e) => { e.target.onerror = null; e.target.src = '/images/BOURBON MORELLI.png'; }}
                     />
                     <div className="flex-1">
                       <p className="font-medium">{item.name}</p>
@@ -362,10 +357,16 @@ const OrderConfirmation = () => {
               <div>
                 <h3 className="font-medium mb-2">Adresse de livraison</h3>
                 <div className="text-sm text-neutral-600">
-                  {order.shipping.firstName} {order.shipping.lastName}<br />
-                  {order.shipping.streetAddress}<br />
-                  {order.shipping.postalCode} {order.shipping.city}<br />
-                  {order.shipping.country}
+                  {order.shipping?.firstName || order.shipping?.lastName ? (
+                    <>
+                      {order.shipping.firstName} {order.shipping.lastName}<br />
+                      {order.shipping.streetAddress && <>{order.shipping.streetAddress}<br /></>}
+                      {(order.shipping.postalCode || order.shipping.city) && <>{order.shipping.postalCode} {order.shipping.city}<br /></>}
+                      {order.shipping.country}
+                    </>
+                  ) : (
+                    <span className="text-neutral-400 italic">Adresse enregistrée avec la commande</span>
+                  )}
                 </div>
               </div>
 

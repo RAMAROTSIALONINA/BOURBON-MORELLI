@@ -48,6 +48,14 @@ const Login = () => {
       });
       
       if (response.success) {
+        // Bloquer les comptes admin sur la page client
+        if (response.user?.role === 'admin') {
+          // Nettoyer les données client stockées
+          localStorage.removeItem('userToken');
+          localStorage.removeItem('userInfo');
+          setErrors({ submit: 'Ce compte est un compte administrateur. Utilisez le panneau d\'administration.' });
+          return;
+        }
         navigate('/account');
       } else {
         setErrors({ submit: response.message || 'Email ou mot de passe incorrect' });

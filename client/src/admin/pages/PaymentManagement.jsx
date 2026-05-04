@@ -1,30 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  CreditCard, 
-  Edit, 
-  Trash2, 
-  Search, 
-  Plus,
+import {
+  CreditCard,
+  DollarSign,
+  Search,
+  Filter,
   Eye,
+  Clock,
   Check,
   X,
-  Clock,
-  AlertCircle,
-  DollarSign,
-  Calendar,
-  Filter,
+  TrendingDown,
   Download,
+  Calendar,
+  Trash2,
   RefreshCw,
-  TrendingUp,
-  TrendingDown
+  History,
+  List
 } from 'lucide-react';
 import paymentService from '../../services/paymentService';
 import useNotificationStore from '../../services/notificationService';
+import TransactionHistory from './TransactionHistory';
 
 const PaymentManagement = () => {
-  const navigate = useNavigate();
   const addNotification = useNotificationStore(s => s.addNotification);
+  const [activeTab, setActiveTab] = useState('payments');
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,8 +33,6 @@ const PaymentManagement = () => {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
-
-  console.log('=== PAYMENT MANAGEMENT COMPONENT MOUNTED ===');
 
   // Charger les paiements
   const loadPayments = useCallback(async () => {
@@ -243,6 +239,38 @@ const PaymentManagement = () => {
 
   return (
     <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-neutral-200">
+        <button
+          onClick={() => setActiveTab('payments')}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            activeTab === 'payments'
+              ? 'border-primary-600 text-primary-700'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700'
+          }`}
+        >
+          <List className="w-4 h-4" />
+          Paiements
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            activeTab === 'history'
+              ? 'border-primary-600 text-primary-700'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          Historique des transactions
+        </button>
+      </div>
+
+      {/* Tab : Historique des transactions */}
+      {activeTab === 'history' && <TransactionHistory />}
+
+      {/* Tab : Paiements */}
+      {activeTab === 'payments' && <>
+
       {/* En-tête avec statistiques */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-neutral-900">Gestion des paiements</h2>
@@ -539,6 +567,9 @@ const PaymentManagement = () => {
           </div>
         </div>
       )}
+
+      {/* Fin du tab Paiements */}
+      </>}
 
       {/* Modal Remboursement */}
       {showRefundModal && selectedPayment && (

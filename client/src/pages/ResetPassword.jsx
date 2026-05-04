@@ -41,7 +41,7 @@ const ResetPassword = () => {
     const newErrors = {};
     
     if (!formData.password) newErrors.password = 'Mot de passe requis';
-    else if (formData.password.length < 6) newErrors.password = 'Min 6 caractères';
+    else if (formData.password.length < 8) newErrors.password = 'Le mot de passe doit contenir au moins 8 caractères';
     if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Mots de passe différents';
     
     setErrors(newErrors);
@@ -169,7 +169,7 @@ const ResetPassword = () => {
                 className={`appearance-none block w-full px-3 py-2 pl-10 pr-10 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
                   errors.password ? 'border-red-300' : 'border-gray-300'
                 }`}
-                placeholder="Min 6 caractères"
+                placeholder="Min 8 caractères"
               />
               <Lock className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
               <button

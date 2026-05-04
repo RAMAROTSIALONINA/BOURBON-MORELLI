@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -7,9 +7,15 @@ import {
   Bell,
   ChevronDown,
   Settings,
-  X
+  X,
+  Package,
+  ShoppingBag,
+  Users
 } from 'lucide-react';
 import useNotificationStore from '../../services/notificationService';
+import productService from '../../services/productService';
+import orderService from '../../services/orderService';
+import customerService from '../../services/customerService';
 
 // Header Admin Simple et Efficace - Version 2.0
 // Gauche: Logo BOURBON MORELLI | Droite: Recherche + Notifications
@@ -19,8 +25,13 @@ const AdminHeader = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState({ products: [], orders: [], customers: [] });
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
   const navigate = useNavigate();
+  const searchCacheRef = useRef({ products: null, orders: null, customers: null, loaded: false });
+  const debounceRef = useRef(null);
 
   // Utiliser le store global de notifications
   const {
@@ -40,10 +51,91 @@ const AdminHeader = () => {
       if (!e.target.closest('[data-profile-dropdown]') && !e.target.closest('[data-profile-button]')) {
         setIsProfileOpen(false);
       }
+      if (!e.target.closest('[data-search-box]')) {
+        setIsSearchOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Pré-charger les données de recherche (produits, commandes, clients) à la demande
+  const ensureSearchData = async () => {
+    if (searchCacheRef.current.loaded) return searchCacheRef.current;
+    try {
+      const [prodRes, orderRes, custRes] = await Promise.allSettled([
+        productService.getAllProducts(),
+        orderService.getAllOrders(),
+        customerService.getAllCustomers()
+      ]);
+      const extractList = (r, keys) => {
+        if (r.status !== 'fulfilled') return [];
+        const d = r.value;
+        if (Array.isArray(d)) return d;
+        for (const k of keys) {
+          if (Array.isArray(d?.[k])) return d[k];
+          if (Array.isArray(d?.data?.[k])) return d.data[k];
+        }
+        return Array.isArray(d?.data) ? d.data : [];
+      };
+      searchCacheRef.current = {
+        products: extractList(prodRes, ['products']),
+        orders: extractList(orderRes, ['orders']),
+        customers: extractList(custRes, ['customers', 'users']),
+        loaded: true
+      };
+    } catch (err) {
+      searchCacheRef.current = { products: [], orders: [], customers: [], loaded: true };
+    }
+    return searchCacheRef.current;
+  };
+
+  // Recherche debouncée à chaque frappe
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      setSearchResults({ products: [], orders: [], customers: [] });
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      const data = await ensureSearchData();
+      const matchProd = (p) =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
+        (p.slug || '').toLowerCase().includes(q);
+      const matchOrder = (o) =>
+        String(o.id || '').includes(q) ||
+        (o.order_number || '').toLowerCase().includes(q) ||
+        (o.customer_name || o.customer?.name || '').toLowerCase().includes(q) ||
+        (o.email || o.customer?.email || '').toLowerCase().includes(q) ||
+        (o.status || '').toLowerCase().includes(q);
+      const matchCust = (c) =>
+        (c.name || `${c.first_name || ''} ${c.last_name || ''}`).toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q) ||
+        (c.phone || '').toLowerCase().includes(q);
+
+      setSearchResults({
+        products: (data.products || []).filter(matchProd).slice(0, 5),
+        orders: (data.orders || []).filter(matchOrder).slice(0, 5),
+        customers: (data.customers || []).filter(matchCust).slice(0, 5)
+      });
+      setIsSearching(false);
+    }, 250);
+    return () => debounceRef.current && clearTimeout(debounceRef.current);
+  }, [searchQuery]);
+
+  const goTo = (path) => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setIsMobileMenuOpen(false);
+    navigate(path);
+  };
+
+  const totalResults =
+    searchResults.products.length + searchResults.orders.length + searchResults.customers.length;
 
   useEffect(() => {
     const user = localStorage.getItem('adminUser');
@@ -61,9 +153,17 @@ const AdminHeader = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/admin/orders?search=${encodeURIComponent(searchQuery)}`);
+    const q = searchQuery.trim();
+    if (!q) return;
+    // Si un unique résultat correspond, on y va directement
+    if (totalResults === 1) {
+      if (searchResults.products[0]) return goTo(`/admin/products`);
+      if (searchResults.orders[0]) return goTo(`/admin/orders/${searchResults.orders[0].id}`);
+      if (searchResults.customers[0]) return goTo(`/admin/customers/${searchResults.customers[0].id}`);
     }
+    // Sinon on ouvre la liste des commandes filtrée (fallback historique)
+    navigate(`/admin/orders?search=${encodeURIComponent(q)}`);
+    setIsSearchOpen(false);
   };
 
   return (
@@ -86,7 +186,7 @@ const AdminHeader = () => {
             {/* DROITE - Recherche + Notifications */}
             <div className="flex items-center space-x-4">
               {/* Recherche */}
-              <div className="hidden sm:block">
+              <div className="hidden sm:block relative" data-search-box>
                 <form onSubmit={handleSearch} className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Search className="h-4 w-4 text-gray-400" />
@@ -94,11 +194,132 @@ const AdminHeader = () => {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Rechercher produits, commandes..."
-                    className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
+                    onFocus={() => setIsSearchOpen(true)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setIsSearchOpen(false); }}
+                    placeholder="Rechercher produits, commandes, clients..."
+                    className="w-72 pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchQuery(''); setSearchResults({ products: [], orders: [], customers: [] }); }}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700"
+                      aria-label="Effacer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </form>
+
+                {/* Dropdown des résultats */}
+                {isSearchOpen && searchQuery.trim() && (
+                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-2xl ring-1 ring-black ring-opacity-5 z-50 overflow-hidden text-gray-900">
+                    {isSearching ? (
+                      <div className="px-4 py-6 text-center text-sm text-gray-500">Recherche…</div>
+                    ) : totalResults === 0 ? (
+                      <div className="px-4 py-6 text-center">
+                        <p className="text-sm text-gray-600">Aucun résultat pour « {searchQuery} »</p>
+                        <p className="text-xs text-gray-400 mt-1">Essayez un nom de produit, un n° de commande ou un email client.</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-96 overflow-y-auto">
+                        {searchResults.products.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                              <Package className="h-3.5 w-3.5 text-purple-600" />
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Produits</span>
+                            </div>
+                            {searchResults.products.map((p) => (
+                              <button
+                                key={`p-${p.id}`}
+                                onClick={() => goTo('/admin/products')}
+                                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 flex items-center gap-3"
+                              >
+                                <div className="w-8 h-8 rounded bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                  <Package className="h-4 w-4 text-purple-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{p.name}</p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {p.sku || 'Sans SKU'} · {Number(p.price || 0).toFixed(2)} EUR
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchResults.orders.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                              <ShoppingBag className="h-3.5 w-3.5 text-blue-600" />
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Commandes</span>
+                            </div>
+                            {searchResults.orders.map((o) => (
+                              <button
+                                key={`o-${o.id}`}
+                                onClick={() => goTo(`/admin/orders/${o.id}`)}
+                                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 flex items-center gap-3"
+                              >
+                                <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                  <ShoppingBag className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    Commande #{o.order_number || o.id}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {o.customer_name || o.customer?.name || 'Client inconnu'} ·{' '}
+                                    {Number(o.total_amount || o.total || 0).toFixed(2)} EUR · {o.status}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchResults.customers.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                              <Users className="h-3.5 w-3.5 text-green-600" />
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Clients</span>
+                            </div>
+                            {searchResults.customers.map((c) => (
+                              <button
+                                key={`c-${c.id}`}
+                                onClick={() => goTo(`/admin/customers/${c.id}`)}
+                                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 flex items-center gap-3"
+                              >
+                                <div className="w-8 h-8 rounded bg-green-50 flex items-center justify-center flex-shrink-0">
+                                  <Users className="h-4 w-4 text-green-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Client'}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {c.email || '—'} {c.phone ? `· ${c.phone}` : ''}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {totalResults > 0 && (
+                      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-center">
+                        <button
+                          onClick={handleSearch}
+                          className="text-xs font-medium text-gray-700 hover:text-gray-900"
+                        >
+                          Voir toutes les commandes correspondantes →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Notifications */}
@@ -309,7 +530,7 @@ const AdminHeader = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Rechercher produits, commandes..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
               </form>
             </div>

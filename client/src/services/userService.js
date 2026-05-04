@@ -7,10 +7,15 @@ axios.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      console.error('Token expiré ou invalide, redirection vers login');
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('adminUser');
-      window.location.href = '/admin/login';
+      // N'agit que pour les routes admin pour ne pas perturber les pages clients
+      const url = error.config?.url || '';
+      const isAdminContext = window.location.pathname.startsWith('/admin');
+      if (isAdminContext && (url.includes('/admin') || url.includes('adminToken'))) {
+        console.error('Token admin expiré, redirection vers /admin/login');
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
+        window.location.href = '/admin/login';
+      }
     }
     return Promise.reject(error);
   }

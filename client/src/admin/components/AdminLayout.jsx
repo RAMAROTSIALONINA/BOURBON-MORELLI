@@ -1,44 +1,37 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import AdminSidebar from './AdminSidebar';
 import AdminHeader from './AdminHeader';
 import AdminRoutes from '../AdminRoutes';
+import ContactNotifier from './ContactNotifier';
 
 const AdminLayout = () => {
-  // const [sidebarWidth, setSidebarWidth] = useState('64'); // w-16 = 4rem = 64px en collapsed
-  // const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // useEffect(() => {
-  //   // Écouter les changements de la sidebar
-  //   const handleSidebarChange = (event) => {
-  //     if (event.detail) {
-  //       setIsCollapsed(event.detail.collapsed);
-  //       setSidebarWidth(event.detail.collapsed ? '64' : '256'); // w-16 = 64px, w-64 = 256px
-  //     }
-  //   };
-
-  //   window.addEventListener('sidebarChange', handleSidebarChange);
-  //   return () => window.removeEventListener('sidebarChange', handleSidebarChange);
-  // }, []);
-
-  // const handleToggleSidebar = () => {
-  //   const newCollapsed = !isCollapsed;
-  //   setIsCollapsed(newCollapsed);
-  //   setSidebarWidth(newCollapsed ? '64' : '256');
-  //   window.dispatchEvent(new CustomEvent('sidebarChange', {
-  //     detail: { collapsed: newCollapsed }
-  //   }));
-  // };
+  useEffect(() => {
+    const handleSidebarChange = (event) => {
+      if (event.detail) setIsCollapsed(event.detail.collapsed);
+    };
+    window.addEventListener('sidebarChange', handleSidebarChange);
+    return () => window.removeEventListener('sidebarChange', handleSidebarChange);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Admin Sidebar */}
+    <div className="min-h-screen bg-gray-50">
+      {/* Poller global des nouveaux messages de contact */}
+      <ContactNotifier />
+
+      {/* Admin Sidebar (fixe) */}
       <AdminSidebar />
-      
-      {/* Main content area */}
-      <div className="flex-1">
+
+      {/* Main content area — marge dynamique pour compenser la sidebar fixe */}
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+        }`}
+      >
         {/* Admin Header */}
         <AdminHeader />
-        
+
         {/* Page content */}
         <main className="bg-gray-50 pt-16">
           <div className="px-6 py-6">

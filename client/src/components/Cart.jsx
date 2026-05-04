@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight } from 'lucide-react';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 const BACKEND_URL = 'http://localhost:5003';
 
@@ -79,12 +80,7 @@ const Cart = ({ isOpen, onClose, onCheckout }) => {
     localStorage.removeItem('cart');
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  const { format: formatPrice } = useCurrency();
 
   const calculateSubtotal = () => {
     console.log('🧮 Début calcul subtotal, cartItems:', cartItems);

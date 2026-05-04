@@ -1,229 +1,198 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, ShoppingBag, Trash2, Star, Eye } from 'lucide-react';
-import productDataService from '../../services/productDataService';
+import { Heart, ShoppingBag, Trash2, Package } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { wishlistService } from '../../services/accountService';
+import cartService from '../../services/cartService';
+import { useCurrency } from '../../contexts/CurrencyContext';
+
+const API_BASE = 'http://localhost:5003';
+const resolveImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/uploads')) return `${API_BASE}${url}`;
+  return url;
+};
 
 const Wishlist = () => {
-  const [wishlist, setWishlist] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { format: formatPrice } = useCurrency();
 
-  useEffect(() => {
-    loadWishlist();
-  }, []);
-
-  const loadWishlist = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      // Charger les favoris depuis localStorage
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const savedWishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-      setWishlist(savedWishlist);
-      
-      console.log('=== WISHLIST LOADED ===');
-      console.log('Items in wishlist:', savedWishlist.length);
-    } catch (error) {
-      console.error('Erreur chargement favoris:', error);
-      setWishlist([]);
+      const list = await wishlistService.list();
+      setItems(list);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || 'Impossible de charger les favoris');
     } finally {
       setLoading(false);
     }
   };
 
-  const removeFromWishlist = (productId) => {
-    const updatedWishlist = wishlist.filter(item => item.id !== productId);
-    setWishlist(updatedWishlist);
-    localStorage.setItem('wishlist', JSON.stringify(updatedWishlist));
-    
-    console.log(`Produit ${productId} retiré des favoris`);
+  useEffect(() => { load(); }, []);
+
+  const remove = async (productId) => {
+    try {
+      await wishlistService.remove(productId);
+      toast.success('Retiré des favoris');
+      setItems(prev => prev.filter(p => p.id !== productId));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur');
+    }
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm('Vider tous les favoris ?')) return;
+    try {
+      await wishlistService.clear();
+      toast.success('Favoris vidés');
+      setItems([]);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur');
+    }
   };
 
   const addToCart = (product) => {
-    // Simulation d'ajout au panier
-    console.log('Ajout au panier:', product.name);
-    // En production, appeler le service panier
-    alert(`${product.name} ajouté au panier !`);
-  };
-
-  // Ajouter des produits de test aux favoris (pour démonstration)
-  const addTestProducts = () => {
-    const testProducts = productDataService.getTestWishlistProducts();
-    
-    localStorage.setItem('wishlist', JSON.stringify(testProducts));
-    setWishlist(testProducts);
-    console.log('Produits de test ajoutés aux favoris:', testProducts.map(p => p.name));
-  };
-
-  const renderStars = (rating) => {
-    const stars = [];
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 !== 0;
-    
-    for (let i = 0; i < fullStars; i++) {
-      stars.push(<Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />);
-    }
-    
-    if (hasHalfStar) {
-      stars.push(<Star key="half" className="w-4 h-4 fill-yellow-200 text-yellow-400" />);
-    }
-    
-    const emptyStars = 5 - Math.ceil(rating);
-    for (let i = 0; i < emptyStars; i++) {
-      stars.push(<Star key={`empty-${i}`} className="w-4 h-4 text-gray-300" />);
-    }
-    
-    return stars;
+    const payload = {
+      id: product.id,
+      name: product.name,
+      price: Number(product.price) || 0,
+      image_url: product.image,
+      images: product.images,
+      slug: product.slug
+    };
+    cartService.addToCart(payload);
+    toast.success(`${product.name} ajouté au panier`);
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-500 border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Mes favoris</h2>
-        <p className="text-gray-600">Les produits que vous avez ajoutés à vos favoris</p>
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-luxury font-bold text-neutral-900 flex items-center gap-2">
+          <Heart className="w-6 h-6" />
+          Mes favoris
+        </h2>
+        {items.length > 0 && (
+          <button onClick={clearAll} className="text-sm text-red-600 hover:text-red-700">
+            Vider les favoris
+          </button>
+        )}
       </div>
 
-      {wishlist.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-          <Heart className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun favori</h3>
-          <p className="text-gray-600 mb-4">Vous n'avez pas encore ajouté de produit à vos favoris.</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button 
-              onClick={addTestProducts}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
-              Ajouter des produits de test
-            </button>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              Découvrir nos produits
-            </button>
-          </div>
+      {items.length === 0 ? (
+        <div className="bg-neutral-50 rounded-lg p-10 text-center">
+          <Heart className="mx-auto h-12 w-12 text-neutral-300 mb-3" />
+          <h3 className="font-medium text-neutral-900 mb-1">Aucun favori</h3>
+          <p className="text-neutral-600 mb-4">Vous n'avez pas encore ajouté de produit à vos favoris.</p>
+          <Link to="/products" className="inline-flex px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm">
+            Découvrir nos produits
+          </Link>
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-600">
-              {wishlist.length} produit{wishlist.length > 1 ? 's' : ''} dans vos favoris
-            </p>
-            <button className="text-sm text-red-600 hover:text-red-700 transition-colors">
-              Vider les favoris
-            </button>
-          </div>
+          <p className="text-sm text-neutral-600 mb-4">
+            {items.length} produit{items.length > 1 ? 's' : ''} dans vos favoris
+          </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {wishlist.map((product) => (
-              <div key={product.id} className="bg-white rounded-lg shadow-sm overflow-hidden group">
-                <div className="relative">
-                  <div className="aspect-square bg-gray-200 flex items-center justify-center">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name)}`;
-                      }}
-                    />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {items.map(p => {
+              const inStock = Number(p.stock) > 0;
+              const img = p.image || p.images?.[0];
+              const hasDiscount = p.compare_price && Number(p.compare_price) > Number(p.price);
+              const discount = hasDiscount
+                ? Math.round((1 - Number(p.price) / Number(p.compare_price)) * 100)
+                : 0;
+              return (
+                <div key={p.id} className="bg-white rounded-lg border border-neutral-200 overflow-hidden group">
+                  <div className="relative aspect-square bg-neutral-100">
+                    {img ? (
+                      <img
+                        src={resolveImageUrl(img)}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-10 h-10 text-neutral-300" />
+                      </div>
+                    )}
+                    {hasDiscount && (
+                      <span className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded-md text-xs font-medium">
+                        -{discount}%
+                      </span>
+                    )}
+                    {!inStock && (
+                      <span className="absolute top-2 right-2 bg-neutral-800 text-white px-2 py-1 rounded-md text-xs font-medium">
+                        Rupture
+                      </span>
+                    )}
                   </div>
-                  
-                  {/* Badge de réduction */}
-                  {product.originalPrice && (
-                    <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded-md text-xs font-medium">
-                      -{Math.round((1 - product.price / product.originalPrice) * 100)}%
-                    </div>
-                  )}
-                  
-                  {/* Badge de stock */}
-                  {!product.inStock && (
-                    <div className="absolute top-2 right-2 bg-gray-800 text-white px-2 py-1 rounded-md text-xs font-medium">
-                      Rupture
-                    </div>
-                  )}
-                  
-                  {/* Actions rapides */}
-                  <div className="absolute top-2 right-2 flex flex-col space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors">
-                      <Eye className="w-4 h-4 text-gray-600" />
-                    </button>
-                    <button
-                      onClick={() => removeFromWishlist(product.id)}
-                      className="p-2 bg-white rounded-full shadow-md hover:bg-red-50 transition-colors"
+
+                  <div className="p-4">
+                    {p.brand && (
+                      <span className="text-xs text-neutral-500 uppercase tracking-wide">{p.brand}</span>
+                    )}
+                    <Link
+                      to={p.slug ? `/product/${p.slug}` : '#'}
+                      className="block font-medium text-neutral-900 mt-1 line-clamp-2 hover:text-primary-500"
                     >
-                      <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-                    </button>
-                  </div>
-                </div>
+                      {p.name}
+                    </Link>
 
-                <div className="p-4">
-                  <div className="mb-2">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">
-                      {product.category}
-                    </span>
-                  </div>
-                  
-                  <h3 className="font-medium text-gray-900 mb-2 line-clamp-2">
-                    {product.name}
-                  </h3>
-                  
-                  <div className="flex items-center space-x-1 mb-3">
-                    {renderStars(product.rating)}
-                    <span className="text-xs text-gray-600">
-                      ({product.reviews})
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-lg font-bold text-gray-900">
-                          {product.price.toLocaleString('fr-FR')} Ar
+                    <div className="flex items-center gap-2 mt-2 mb-3">
+                      <span className="text-lg font-bold text-neutral-900">
+                        {formatPrice(Number(p.price) || 0)}
+                      </span>
+                      {hasDiscount && (
+                        <span className="text-sm text-neutral-500 line-through">
+                          {formatPrice(Number(p.compare_price))}
                         </span>
-                        {product.originalPrice && (
-                          <span className="text-sm text-gray-500 line-through">
-                            {product.originalPrice.toLocaleString('fr-FR')} Ar
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => addToCart(product)}
-                      disabled={!product.inStock}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                        product.inStock
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      <div className="flex items-center justify-center space-x-1">
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => addToCart(p)}
+                        disabled={!inStock}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+                          inStock
+                            ? 'bg-primary-500 text-white hover:bg-primary-600'
+                            : 'bg-neutral-200 text-neutral-500 cursor-not-allowed'
+                        }`}
+                      >
                         <ShoppingBag className="w-4 h-4" />
-                        <span>{product.inStock ? 'Ajouter au panier' : 'Indisponible'}</span>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={() => removeFromWishlist(product.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-xs text-gray-500">
-                      Ajouté le {new Date(product.addedDate).toLocaleDateString('fr-FR')}
-                    </p>
+                        {inStock ? 'Ajouter' : 'Indisponible'}
+                      </button>
+                      <button
+                        onClick={() => remove(p.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                        title="Retirer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {p.added_at && (
+                      <p className="mt-3 pt-3 border-t border-neutral-100 text-xs text-neutral-500">
+                        Ajouté le {new Date(p.added_at).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

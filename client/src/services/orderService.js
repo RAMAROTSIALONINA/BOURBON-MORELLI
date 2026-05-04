@@ -112,20 +112,15 @@ const customerOrderService = {
   }
 };
 
-// Configuration d'axios avec le token d'authentification (pour admin)
-const getAuthConfig = async () => {
-  let token = localStorage.getItem('adminToken');
-  
-  // Si aucun token, essayer d'en obtenir un temporaire
+// Configuration d'axios avec le token admin stocké
+const getAuthConfig = () => {
+  const token = localStorage.getItem('adminToken');
   if (!token) {
-    try {
-      token = await getTempAdminToken();
-    } catch (error) {
-      console.error('Impossible d\'obtenir un token admin:', error);
-      throw new Error('Token d\'authentification requis');
-    }
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    window.location.href = '/admin/login';
+    throw new Error('Token d\'authentification requis');
   }
-  
   return {
     headers: {
       'Content-Type': 'application/json',
@@ -134,186 +129,98 @@ const getAuthConfig = async () => {
   };
 };
 
-// Obtenir un token admin temporaire pour le développement
-const getTempAdminToken = async () => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/users/admin/temp-token`);
-    return response.data.token;
-  } catch (error) {
-    console.error('Erreur lors de l\'obtention du token temporaire:', error);
-    throw error;
+// Gérer les erreurs d'auth (401/403) : purger et rediriger
+const handleAuthError = (error) => {
+  if (error?.response?.status === 401 || error?.response?.status === 403) {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    window.location.href = '/admin/login';
   }
+  throw error.response?.data || { error: 'Erreur serveur' };
 };
 
 const orderService = {
   // Récupérer toutes les commandes
   getAllOrders: async () => {
     try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/orders`,
-        config
-      );
+      const response = await axios.get(`${API_BASE_URL}/orders`, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des commandes:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les commandes' };
+      handleAuthError(error);
     }
   },
 
   // Récupérer une commande par son ID
   getOrderById: async (orderId) => {
     try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/orders/${orderId}`,
-        config
-      );
+      const response = await axios.get(`${API_BASE_URL}/orders/${orderId}`, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération de la commande:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer la commande' };
+      handleAuthError(error);
     }
   },
 
   // Mettre à jour le statut d'une commande
   updateOrderStatus: async (orderId, statusData) => {
     try {
-      console.log('=== UPDATE ORDER STATUS ===');
-      console.log('Order ID:', orderId);
-      console.log('Status data:', JSON.stringify(statusData, null, 2));
-      
-      const config = await getAuthConfig();
-      const response = await axios.put(
-        `${API_BASE_URL}/orders/${orderId}/status`,
-        statusData,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
+      const response = await axios.put(`${API_BASE_URL}/orders/${orderId}/status`, statusData, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du statut:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de mettre à jour le statut' };
+      handleAuthError(error);
     }
   },
 
-  // Créer une nouvelle commande
   createOrder: async (orderData) => {
     try {
-      console.log('=== CREATE ORDER ===');
-      console.log('Order data:', JSON.stringify(orderData, null, 2));
-      
-      const config = await getAuthConfig();
-      const response = await axios.post(
-        `${API_BASE_URL}/orders`,
-        orderData,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
+      const response = await axios.post(`${API_BASE_URL}/orders`, orderData, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la création de la commande:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de créer la commande' };
+      handleAuthError(error);
     }
   },
 
-  // Mettre à jour une commande
   updateOrder: async (orderId, orderData) => {
     try {
-      console.log('=== UPDATE ORDER ===');
-      console.log('Order ID:', orderId);
-      console.log('Order data:', JSON.stringify(orderData, null, 2));
-      
-      const config = await getAuthConfig();
-      const response = await axios.put(
-        `${API_BASE_URL}/orders/${orderId}`,
-        orderData,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
+      const response = await axios.put(`${API_BASE_URL}/orders/${orderId}`, orderData, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la mise à jour de la commande:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de mettre à jour la commande' };
+      handleAuthError(error);
     }
   },
 
-  // Supprimer une commande
   deleteOrder: async (orderId) => {
     try {
-      console.log('=== DELETE ORDER ===');
-      console.log('Order ID:', orderId);
-      
-      const config = await getAuthConfig();
-      const response = await axios.delete(
-        `${API_BASE_URL}/orders/${orderId}`,
-        config
-      );
-      
-      console.log('=== RESPONSE ===');
-      console.log('Response:', JSON.stringify(response.data, null, 2));
-      
+      const response = await axios.delete(`${API_BASE_URL}/orders/${orderId}`, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la suppression de la commande:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de supprimer la commande' };
+      handleAuthError(error);
     }
   },
 
-  // Récupérer les commandes par statut
   getOrdersByStatus: async (status) => {
     try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/orders?status=${encodeURIComponent(status)}`,
-        config
-      );
+      const response = await axios.get(`${API_BASE_URL}/orders?status=${encodeURIComponent(status)}`, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des commandes par statut:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les commandes de ce statut' };
+      handleAuthError(error);
     }
   },
 
-  // Récupérer les commandes d'un client
   getOrdersByCustomer: async (customerId) => {
     try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/orders?customer_id=${customerId}`,
-        config
-      );
+      const response = await axios.get(`${API_BASE_URL}/orders?customer_id=${customerId}`, getAuthConfig());
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des commandes du client:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible de récupérer les commandes du client' };
+      handleAuthError(error);
     }
   },
 
-  // Exporter les commandes
   exportOrders: async (filters = {}) => {
     try {
-      const config = await getAuthConfig();
-      const response = await axios.get(
-        `${API_BASE_URL}/orders/export`,
-        {
-          ...config,
-          params: filters
-        }
-      );
+      const response = await axios.get(`${API_BASE_URL}/orders/export`, { ...getAuthConfig(), params: filters });
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de l\'export des commandes:', error);
-      throw error.response?.data || { error: 'Erreur serveur', message: 'Impossible d\'exporter les commandes' };
+      handleAuthError(error);
     }
   }
 };

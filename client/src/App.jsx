@@ -4,6 +4,8 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import Cart from './components/Cart';
 import { Toaster } from 'react-hot-toast';
+import { CurrencyProvider } from './contexts/CurrencyContext';
+import { WishlistProvider } from './contexts/WishlistContext';
 
 // Pages publiques
 import Home from './pages/Home';
@@ -16,6 +18,7 @@ import TestPaymentGuide from './pages/TestPaymentGuide';
 import About from './pages/About';
 import Contact from './pages/Contact';
 import Account from './pages/Account';
+import SearchResults from './pages/SearchResults';
 
 // Pages Login/Register
 import Login from './pages/Login';
@@ -40,6 +43,15 @@ import cartService from './services/cartService';
 
 // Styles
 import './index.css';
+
+// Remet la page en haut à chaque changement de route
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -84,10 +96,11 @@ function App() {
     window.location.href = '/checkout';
   };
 
-  const handleAddToCart = (product) => {
-    // Utiliser le cartService pour ajouter au panier
-    cartService.addToCart(product);
+  const handleAddToCart = (product, quantity = 1) => {
+    // Utiliser le cartService pour ajouter au panier (retourne { success, reason, available })
+    const result = cartService.addToCart(product, quantity);
     setCartCount(cartService.getCartCount());
+    return result;
   };
 
   // Vérifier si on est sur une page admin
@@ -98,7 +111,7 @@ function App() {
       {/* Header public seulement sur les pages non-admin */}
       {!isAdminPage && <Header cartCount={cartCount} />}
       
-      <main className={`flex-grow ${isAdminPage ? '' : 'pt-32 lg:pt-36'}`}>
+      <main className={`flex-grow ${isAdminPage ? '' : 'pt-24 lg:pt-56'}`}>
         <Routes>
           {/* Routes publiques */}
           <Route path="/" element={<Home />} />
@@ -111,6 +124,7 @@ function App() {
           <Route path="/test-payments" element={<TestPaymentGuide />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/search" element={<SearchResults onAddToCart={handleAddToCart} />} />
           {/* Routes Login/Register */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -161,7 +175,7 @@ function App() {
           success: {
             duration: 3000,
             iconTheme: {
-              primary: '#eab308',
+              primary: '#374151',
               secondary: '#fff',
             },
           },
@@ -175,7 +189,12 @@ function App() {
 function AppWithRouter() {
   return (
     <Router>
-      <App />
+      <ScrollToTop />
+      <CurrencyProvider>
+        <WishlistProvider>
+          <App />
+        </WishlistProvider>
+      </CurrencyProvider>
     </Router>
   );
 }

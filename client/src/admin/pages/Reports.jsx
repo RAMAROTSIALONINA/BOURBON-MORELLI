@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
 import {
-  FileText, Download, Loader, Calendar,
-  ShoppingBag, DollarSign, Package, Users, Tag,
-  FileSpreadsheet, File
+  DollarSign,
+  ShoppingBag,
+  Package,
+  Users,
+  Tag,
+  Loader,
+  FileSpreadsheet,
+  File,
+  Calendar
 } from 'lucide-react';
 import useNotificationStore from '../../services/notificationService';
 
@@ -38,7 +44,7 @@ const REPORT_TYPES = [
   {
     id: 'customers',
     icon: Users,
-    color: 'bg-amber-50 text-amber-600',
+    color: 'bg-gray-100 text-gray-700',
     title: 'Rapport clients',
     description: 'Top acheteurs (inscrits + invités), fréquence de commande, CA par client.',
     audience: 'Marketing'

@@ -9,6 +9,7 @@ import {
   CreditCard,
   Truck
 } from 'lucide-react';
+import { useCurrency } from '../contexts/CurrencyContext';
 import cartService from '../services/cartService';
 
 const BACKEND_URL = 'http://localhost:5003';
@@ -94,20 +95,19 @@ const CartPage = () => {
 
   const updateQuantity = (itemId, newQuantity) => {
     if (newQuantity < 1) return;
-    
-    // Utiliser cartService pour mettre à jour la quantité
+
+    // Vérifier le stock maximum avant mise à jour
+    const targetItem = cartItems.find(i => i.id === itemId);
+    const maxStock = targetItem?.stock_quantity ?? 0;
+    if (maxStock > 0 && newQuantity > maxStock) return; // bloqué au stock dispo
+
     const success = cartService.updateQuantity(itemId, newQuantity);
-    
+
     if (success) {
-      // Mettre à jour l'état local pour l'interface
       setCartItems(items =>
         items.map(item => {
           if (item.id === itemId) {
-            return {
-              ...item,
-              quantity: newQuantity,
-              total: item.price * newQuantity
-            };
+            return { ...item, quantity: newQuantity, total: item.price * newQuantity };
           }
           return item;
         })
@@ -140,12 +140,7 @@ const CartPage = () => {
     window.location.href = '/checkout';
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(price);
-  };
+  const { format: formatPrice } = useCurrency();
 
   if (loading) {
     return (
@@ -229,20 +224,32 @@ const CartPage = () => {
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="w-8 h-8 border border-neutral-200 rounded-full flex items-center justify-center hover:bg-neutral-100 transition-colors"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="w-8 text-center font-medium">{item.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="w-8 h-8 border border-neutral-200 rounded-full flex items-center justify-center hover:bg-neutral-100 transition-colors"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                        <div className="flex flex-col items-start gap-1">
+                          <div className="flex items-center space-x-3">
+                            <button
+                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                              className="w-8 h-8 border border-neutral-200 rounded-full flex items-center justify-center hover:bg-neutral-100 transition-colors"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="w-8 text-center font-medium">{item.quantity}</span>
+                            <button
+                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              disabled={item.stock_quantity > 0 && item.quantity >= item.stock_quantity}
+                              className={`w-8 h-8 border rounded-full flex items-center justify-center transition-colors
+                                ${item.stock_quantity > 0 && item.quantity >= item.stock_quantity
+                                  ? 'border-neutral-100 text-neutral-300 cursor-not-allowed'
+                                  : 'border-neutral-200 hover:bg-neutral-100'}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {/* Avertissement stock faible */}
+                          {item.stock_quantity > 0 && item.quantity >= item.stock_quantity && (
+                            <p className="text-xs text-orange-600 font-medium">
+                              Stock max : {item.stock_quantity} unité{item.stock_quantity > 1 ? 's' : ''}
+                            </p>
+                          )}
                         </div>
 
                         <div className="text-right">

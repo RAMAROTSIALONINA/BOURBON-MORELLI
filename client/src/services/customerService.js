@@ -75,7 +75,7 @@ const customerService = {
 
       const idStr = String(customerId);
       if (idStr.startsWith('g-')) {
-        throw { error: 'Non autorisé', message: 'Les clients invités ne peuvent pas être modifiés (ils n\'ont pas de compte).' };
+        throw new Error('Les clients invités ne peuvent pas être modifiés (ils n\'ont pas de compte).');
       }
       const realId = idStr.startsWith('u-') ? idStr.slice(2) : idStr;
 

@@ -1,31 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Bell, 
-  Edit, 
-  Trash2, 
-  Search, 
+import {
+  Bell,
   Plus,
-  Eye,
+  Trash2,
+  Search,
   Send,
-  Check,
-  X,
-  Clock,
+  Users,
   AlertCircle,
   Info,
-  Mail,
-  Calendar,
-  Filter,
+  Check,
+  X,
+  Megaphone,
   Download,
-  Users,
-  Package,
-  DollarSign,
-  Megaphone
+  Filter,
+  Calendar,
+  Eye
 } from 'lucide-react';
-import notificationService from '../../services/notificationService';
 
 const NotificationManagement = () => {
-  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

@@ -20,6 +20,15 @@ import {
 import orderService from '../../services/orderService';
 import useNotificationStore from '../../services/notificationService';
 
+// Base URL du backend pour servir les images /uploads/ (bypass du proxy React)
+const BACKEND_URL = 'http://localhost:5003';
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  if (url.startsWith('/uploads/')) return `${BACKEND_URL}${url}`;
+  return url;
+};
+
 const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,18 +49,12 @@ const OrderManagement = () => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  console.log('=== ORDER MANAGEMENT COMPONENT MOUNTED ===');
-
   // Charger les commandes
   const loadOrders = useCallback(async () => {
     try {
       setLoading(true);
       const response = await orderService.getAllOrders();
-      console.log('=== LOAD ORDERS RESPONSE ===');
-      console.log('Response:', response);
-      console.log('Response type:', typeof response);
-      console.log('Is array:', Array.isArray(response));
-      
+
       // Gérer différents formats de réponse
       let ordersData = [];
       if (Array.isArray(response)) {
@@ -60,11 +63,8 @@ const OrderManagement = () => {
         ordersData = response.data;
       } else if (response && response.orders && Array.isArray(response.orders)) {
         ordersData = response.orders;
-      } else {
-        console.warn('Format de réponse inattendu:', response);
       }
-      
-      console.log('Orders data:', ordersData);
+
       setOrders(ordersData);
       // Seed pour le polling
       if (!isInitializedRef.current) {
@@ -73,7 +73,6 @@ const OrderManagement = () => {
       }
       setLastCheck(new Date());
     } catch (error) {
-      console.error('Erreur lors du chargement des commandes:', error);
       setOrders([]);
     } finally {
       setLoading(false);
@@ -269,7 +268,7 @@ const OrderManagement = () => {
   const toastStyles = {
     success: { bg: 'bg-green-50', border: 'border-green-400', icon: 'text-green-600', title: 'text-green-900', text: 'text-green-800', bar: 'bg-green-500' },
     info: { bg: 'bg-blue-50', border: 'border-blue-400', icon: 'text-blue-600', title: 'text-blue-900', text: 'text-blue-800', bar: 'bg-blue-500' },
-    warning: { bg: 'bg-amber-50', border: 'border-amber-400', icon: 'text-amber-600', title: 'text-amber-900', text: 'text-amber-800', bar: 'bg-amber-500' },
+    warning: { bg: 'bg-gray-50', border: 'border-gray-400', icon: 'text-gray-600', title: 'text-gray-900', text: 'text-gray-800', bar: 'bg-gray-500' },
     error: { bg: 'bg-red-50', border: 'border-red-400', icon: 'text-red-600', title: 'text-red-900', text: 'text-red-800', bar: 'bg-red-500' }
   };
 
@@ -577,18 +576,32 @@ const OrderManagement = () => {
                             <div>
                               <p className="font-medium text-neutral-900">{item.product_name}</p>
                               {item.product_image && (
-                                <img 
-                                  src={item.product_image} 
+                                <img
+                                  src={resolveImageUrl(item.product_image)}
                                   alt={item.product_name}
                                   className="w-12 h-12 object-cover rounded mt-2"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = '/images/BOURBON MORELLI.png';
+                                  }}
                                 />
                               )}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-neutral-900">{item.quantity}</td>
-                          <td className="px-4 py-3 text-neutral-900">{item.price ? item.price.toLocaleString() : '0'} EUR</td>
+                          <td className="px-4 py-3 text-neutral-900">
+                            {(() => {
+                              const unit = Number(item.unit_price ?? item.price ?? 0);
+                              return `${unit.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+                            })()}
+                          </td>
                           <td className="px-4 py-3 font-medium text-neutral-900">
-                            {(item.price * item.quantity).toLocaleString()} EUR
+                            {(() => {
+                              const unit = Number(item.unit_price ?? item.price ?? 0);
+                              const qty = Number(item.quantity ?? 0);
+                              const total = Number(item.total_price ?? unit * qty);
+                              return `${total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+                            })()}
                           </td>
                         </tr>
                       ))

@@ -7,16 +7,16 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          50: '#fefce8',
-          100: '#fef9c3',
-          200: '#fef08a',
-          300: '#fde047',
-          400: '#facc15',
-          500: '#eab308', // Or principal
-          600: '#ca8a04',
-          700: '#a16207',
-          800: '#854d0e',
-          900: '#713f12',
+          50: '#f9fafb',
+          100: '#f3f4f6',
+          200: '#e5e7eb',
+          300: '#d1d5db',
+          400: '#9ca3af',
+          500: '#374151', // Gris foncé principal
+          600: '#1f2937',
+          700: '#111827',
+          800: '#0d1117',
+          900: '#060a10',
         },
         neutral: {
           50: '#fafafa',
@@ -76,7 +76,7 @@ module.exports = {
       },
       boxShadow: {
         'luxury': '0 10px 30px rgba(0, 0, 0, 0.1)',
-        'gold': '0 4px 20px rgba(234, 179, 8, 0.3)',
+        'gold': '0 4px 20px rgba(55, 65, 81, 0.3)',
       },
     },
   },

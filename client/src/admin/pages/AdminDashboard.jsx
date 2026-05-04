@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Users,
@@ -7,7 +7,9 @@ import {
   Eye,
   Edit,
   Trash2,
-  DollarSign
+  DollarSign,
+  Settings as SettingsIcon,
+  Tag
 } from 'lucide-react';
 import ProductManagement from './ProductManagement';
 import OrderManagement from './OrderManagement';
@@ -19,6 +21,9 @@ import ActivityHistory from './ActivityHistory';
 import DashboardOverview from './DashboardOverview';
 import Analytics from './Analytics';
 import Reports from './Reports';
+import ContactManagement from './ContactManagement';
+import AboutManagement from './AboutManagement';
+import SiteSettingsManagement from './SiteSettingsManagement';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -26,19 +31,27 @@ const AdminDashboard = () => {
   // const [adminUser, setAdminUser] = useState(null);
 
   useEffect(() => {
-    // Vérifier l'authentification
-    let token = localStorage.getItem('adminToken');
-    // let user = localStorage.getItem('adminUser');
-    
-    // Rediriger vers login si non authentifié
+    const token = localStorage.getItem('adminToken');
+    const adminUserRaw = localStorage.getItem('adminUser');
+
     if (!token) {
       navigate('/admin/login');
       return;
     }
-    
-    // if (user) {
-    //   setAdminUser(JSON.parse(user));
-    // }
+
+    // Vérifier que l'utilisateur stocké est bien admin
+    try {
+      const adminUser = adminUserRaw ? JSON.parse(adminUserRaw) : null;
+      if (!adminUser || adminUser.role !== 'admin') {
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
+        navigate('/admin/login');
+      }
+    } catch {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+      navigate('/admin/login');
+    }
   }, [navigate]);
 
   // Données mockées pour le dashboard
@@ -71,9 +84,6 @@ const AdminDashboard = () => {
   // Déterminer la section active basée sur l'URL
   const getActiveSection = () => {
     const path = location.pathname;
-    console.log('=== ACTIVE SECTION CHECK ===');
-    console.log('Current path:', path);
-    
     let section = 'overview';
     if (path.includes('/products')) section = 'products';
     else if (path.includes('/orders')) section = 'orders';
@@ -83,15 +93,14 @@ const AdminDashboard = () => {
     else if (path.includes('/history')) section = 'history';
     else if (path.includes('/analytics')) section = 'analytics';
     else if (path.includes('/reports')) section = 'reports';
+    else if (path.includes('/contact')) section = 'contact';
+    else if (path.includes('/about')) section = 'about';
     else if (path.includes('/settings')) section = 'settings';
-    
-    console.log('Determined section:', section);
+
     return section;
   };
 
   const activeSection = getActiveSection();
-  console.log('=== RENDERING ADMIN DASHBOARD ===');
-  console.log('Active section:', activeSection);
 
   const renderContent = () => {
     switch (activeSection) {
@@ -196,7 +205,7 @@ const AdminDashboard = () => {
                             order.status === 'delivered' ? 'bg-green-100 text-green-800' :
                             order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
                             order.status === 'shipped' ? 'bg-purple-100 text-purple-800' :
-                            'bg-yellow-100 text-yellow-800'
+                            'bg-gray-100 text-gray-800'
                           }`}>
                             {order.status === 'delivered' ? 'Livrée' :
                              order.status === 'processing' ? 'En traitement' :
@@ -297,12 +306,14 @@ const AdminDashboard = () => {
       case 'reports':
         return <Reports />;
 
+      case 'contact':
+        return <ContactManagement />;
+
+      case 'about':
+        return <AboutManagement />;
+
       case 'settings':
-        return (
-          <div className="space-y-8">
-            <CategoryManagement />
-          </div>
-        );
+        return <SettingsTabs />;
 
       default:
         return (
@@ -325,6 +336,8 @@ const AdminDashboard = () => {
           {activeSection === 'payments' && 'Paiements'}
           {activeSection === 'analytics' && 'Analytics'}
           {activeSection === 'reports' && 'Rapports'}
+          {activeSection === 'contact' && 'Messages de contact'}
+          {activeSection === 'about' && 'Page À propos'}
           {activeSection === 'history' && 'Historique'}
           {activeSection === 'settings' && 'Paramètres'}
         </h1>
@@ -337,6 +350,46 @@ const AdminDashboard = () => {
       <div className="pb-8">
         {renderContent()}
       </div>
+    </div>
+  );
+};
+
+// --- Onglets de la page Paramètres ----------------------------------------
+const SettingsTabs = () => {
+  const [tab, setTab] = useState('identity');
+
+  const tabs = [
+    { id: 'identity',   label: 'Identité du site',       icon: SettingsIcon },
+    { id: 'categories', label: 'Gestion des Catégories', icon: Tag }
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Tab bar */}
+      <div className="bg-white rounded-xl border border-neutral-200 p-1 inline-flex flex-wrap gap-1">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-neutral-900 text-white shadow'
+                  : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Panel */}
+      {tab === 'identity'   && <SiteSettingsManagement />}
+      {tab === 'categories' && <CategoryManagement />}
     </div>
   );
 };

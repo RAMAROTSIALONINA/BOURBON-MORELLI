@@ -1,351 +1,164 @@
 import React, { useState, useEffect } from 'react';
-import { Star, MessageSquare, ThumbsUp, ThumbsDown, Edit2, Trash2, Package, X } from 'lucide-react';
+import { Star, MessageSquare, Edit2, Trash2, Package, X } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
+import { reviewService } from '../../services/accountService';
+
+const API_BASE = 'http://localhost:5003';
+const resolveImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/uploads')) return `${API_BASE}${url}`;
+  return url;
+};
 
 const Reviews = () => {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingReview, setEditingReview] = useState(null);
-  const [formData, setFormData] = useState({
-    productId: '',
-    productName: '',
-    rating: 5,
-    title: '',
-    content: '',
-    wouldRecommend: true
-  });
-  const [errors, setErrors] = useState({});
+  const [editing, setEditing] = useState(null);
+  const [formData, setFormData] = useState({ rating: 5, title: '', content: '' });
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadReviews();
-  }, []);
-
-  const loadReviews = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      // Simulation de chargement des avis
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Avis simulés
-      const mockReviews = [
-        {
-          id: 1,
-          productId: 1,
-          productName: 'T-Shirt Premium',
-          productImage: '/images/tshirt-white.jpg',
-          rating: 5,
-          title: 'Excellent produit !',
-          content: 'T-shirt de très bonne qualité, le tissu est agréable et la coupe est parfaite. Je recommande vivement !',
-          wouldRecommend: true,
-          helpful: 12,
-          notHelpful: 1,
-          date: '2024-04-10',
-          verified: true,
-          canEdit: true
-        },
-        {
-          id: 2,
-          productId: 2,
-          productName: 'Nappe Élégante',
-          productImage: '/images/nappe-elegante.jpg',
-          rating: 4,
-          title: 'Belle nappe',
-          content: 'La nappe est très jolie et de bonne qualité. La couleur correspond exactement à la photo. Un peu cher mais ça vaut le coup.',
-          wouldRecommend: true,
-          helpful: 8,
-          notHelpful: 2,
-          date: '2024-04-08',
-          verified: true,
-          canEdit: true
-        },
-        {
-          id: 3,
-          productId: 3,
-          productName: 'Polo Classique',
-          productImage: '/images/polo-blue.jpg',
-          rating: 3,
-          title: 'Correct',
-          content: 'Le polo est correct mais rien d\'exceptionnel. La qualité est moyenne pour le prix. Le col a tendance à se déformer après plusieurs lavages.',
-          wouldRecommend: false,
-          helpful: 5,
-          notHelpful: 3,
-          date: '2024-04-05',
-          verified: true,
-          canEdit: true
-        }
-      ];
-      
-      setReviews(mockReviews);
-    } catch (error) {
-      console.error('Erreur chargement avis:', error);
+      const list = await reviewService.list({ page: 1, limit: 50 });
+      setReviews(list);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || 'Impossible de charger les avis');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStars = (rating, interactive = false, onChange = null) => {
-    const stars = [];
-    
-    for (let i = 1; i <= 5; i++) {
-      const filled = i <= rating;
-      const starClass = filled 
-        ? 'w-5 h-5 fill-yellow-400 text-yellow-400' 
-        : 'w-5 h-5 text-gray-300';
-      
-      if (interactive) {
-        stars.push(
-          <button
-            key={i}
-            type="button"
-            onClick={() => onChange(i)}
-            className={`${starClass} hover:scale-110 transition-transform`}
-          >
-            <Star />
-          </button>
-        );
-      } else {
-        stars.push(<Star key={i} className={starClass} />);
-      }
-    }
-    
-    return (
-      <div className="flex items-center space-x-1">
-        {stars}
-        <span className="ml-2 text-sm text-gray-600">({rating}.0)</span>
-      </div>
-    );
+  useEffect(() => { load(); }, []);
+
+  const openEdit = (r) => {
+    setEditing(r);
+    setFormData({
+      rating: r.rating || 5,
+      title: r.title || '',
+      content: r.content || ''
+    });
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.productName.trim()) newErrors.productName = 'Produit requis';
-    if (!formData.title.trim()) newErrors.title = 'Titre requis';
-    if (!formData.content.trim()) newErrors.content = 'Avis requis';
-    if (formData.content.length < 20) newErrors.content = 'Minimum 20 caractères';
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const closeEdit = () => {
+    setEditing(null);
+    setFormData({ rating: 5, title: '', content: '' });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validateForm()) return;
-    
+    if (!formData.title.trim() || !formData.content.trim()) {
+      toast.error('Titre et contenu requis');
+      return;
+    }
+    if (formData.content.length < 20) {
+      toast.error('Minimum 20 caractères');
+      return;
+    }
+    setSaving(true);
     try {
-      const newReview = {
-        id: Date.now(),
-        productId: formData.productId || Date.now(),
-        productName: formData.productName,
-        productImage: '/images/placeholder.jpg',
-        rating: formData.rating,
-        title: formData.title,
-        content: formData.content,
-        wouldRecommend: formData.wouldRecommend,
-        helpful: 0,
-        notHelpful: 0,
-        date: new Date().toISOString().split('T')[0],
-        verified: true,
-        canEdit: true
-      };
-      
-      if (editingReview) {
-        setReviews(prev => prev.map(review => 
-          review.id === editingReview.id ? newReview : review
-        ));
-      } else {
-        setReviews(prev => [newReview, ...prev]);
-      }
-      
-      // Réinitialiser le formulaire
-      setFormData({
-        productId: '',
-        productName: '',
-        rating: 5,
-        title: '',
-        content: '',
-        wouldRecommend: true
-      });
-      setShowAddModal(false);
-      setEditingReview(null);
-      setErrors({});
-    } catch (error) {
-      console.error('Erreur sauvegarde avis:', error);
+      await reviewService.update(editing.id, formData);
+      toast.success('Avis mis à jour');
+      closeEdit();
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleEdit = (review) => {
-    setEditingReview(review);
-    setFormData({
-      productId: review.productId,
-      productName: review.productName,
-      rating: review.rating,
-      title: review.title,
-      content: review.content,
-      wouldRecommend: review.wouldRecommend
-    });
-    setShowAddModal(true);
-    setErrors({});
-  };
-
-  const handleDelete = (reviewId) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cet avis ?')) {
-      setReviews(prev => prev.filter(review => review.id !== reviewId));
+  const handleDelete = async (id) => {
+    if (!window.confirm('Supprimer cet avis ?')) return;
+    try {
+      await reviewService.remove(id);
+      toast.success('Avis supprimé');
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur');
     }
   };
 
-  const handleHelpful = (reviewId, isHelpful) => {
-    setReviews(prev => prev.map(review => {
-      if (review.id === reviewId) {
-        return {
-          ...review,
-          helpful: isHelpful ? review.helpful + 1 : review.helpful,
-          notHelpful: !isHelpful ? review.notHelpful + 1 : review.notHelpful
-        };
-      }
-      return review;
-    }));
-  };
-
-  const handleCancel = () => {
-    setShowAddModal(false);
-    setEditingReview(null);
-    setFormData({
-      productId: '',
-      productName: '',
-      rating: 5,
-      title: '',
-      content: '',
-      wouldRecommend: true
-    });
-    setErrors({});
-  };
+  const renderStars = (rating, interactive = false, onChange = null) => (
+    <div className="flex items-center space-x-1">
+      {[1, 2, 3, 4, 5].map(i => {
+        const filled = i <= rating;
+        const cls = filled ? 'w-5 h-5 fill-gray-600 text-gray-600' : 'w-5 h-5 text-gray-300';
+        return interactive ? (
+          <button key={i} type="button" onClick={() => onChange(i)} className="hover:scale-110 transition-transform">
+            <Star className={cls} />
+          </button>
+        ) : (
+          <Star key={i} className={cls} />
+        );
+      })}
+      <span className="ml-2 text-sm text-gray-600">({rating}.0)</span>
+    </div>
+  );
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-500 border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Mes avis</h2>
-          <p className="text-gray-600">Partagez votre expérience avec nos produits</p>
-        </div>
-        
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <MessageSquare className="w-4 h-4" />
-          <span>Rédiger un avis</span>
-        </button>
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-luxury font-bold text-neutral-900 flex items-center gap-2">
+          <MessageSquare className="w-6 h-6" />
+          Mes avis
+        </h2>
       </div>
 
       {reviews.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-          <MessageSquare className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun avis</h3>
-          <p className="text-gray-600 mb-4">Vous n'avez pas encore publié d'avis.</p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Rédiger mon premier avis
-          </button>
+        <div className="bg-neutral-50 rounded-lg p-10 text-center">
+          <MessageSquare className="mx-auto h-12 w-12 text-neutral-300 mb-3" />
+          <h3 className="font-medium text-neutral-900 mb-1">Aucun avis</h3>
+          <p className="text-neutral-600 mb-4">Vous n'avez pas encore publié d'avis sur un produit.</p>
+          <Link to="/products" className="inline-flex px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm">
+            Découvrir les produits
+          </Link>
         </div>
       ) : (
         <div className="space-y-4">
-          {reviews.map((review) => (
-            <div key={review.id} className="bg-white rounded-lg shadow-sm p-6">
-              <div className="flex items-start space-x-4">
-                <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Package className="w-8 h-8 text-gray-600" />
+          {reviews.map(r => (
+            <div key={r.id} className="bg-white rounded-lg border border-neutral-200 p-5">
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 bg-neutral-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {r.product_image ? (
+                    <img src={resolveImageUrl(r.product_image)} alt={r.product_name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                  ) : (
+                    <Package className="w-8 h-8 text-neutral-400" />
+                  )}
                 </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{review.productName}</h3>
-                      <div className="flex items-center space-x-2 mt-1">
-                        {renderStars(review.rating)}
-                        {review.verified && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                            Achat vérifié
-                          </span>
-                        )}
-                      </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0">
+                      <Link to={r.product_slug ? `/product/${r.product_slug}` : '#'} className="font-semibold text-neutral-900 hover:text-primary-500 truncate block">
+                        {r.product_name || 'Produit'}
+                      </Link>
+                      <div className="mt-1">{renderStars(r.rating)}</div>
                     </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-500">
-                        {new Date(review.date).toLocaleDateString('fr-FR')}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-neutral-500">
+                        {r.created_at && new Date(r.created_at).toLocaleDateString('fr-FR')}
                       </span>
-                      {review.canEdit && (
-                        <div className="flex items-center space-x-1">
-                          <button
-                            onClick={() => handleEdit(review)}
-                            className="p-1 text-gray-600 hover:text-blue-600 transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(review.id)}
-                            className="p-1 text-gray-600 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                      <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-neutral-100 rounded" title="Modifier">
+                        <Edit2 className="w-4 h-4 text-neutral-600" />
+                      </button>
+                      <button onClick={() => handleDelete(r.id)} className="p-1.5 hover:bg-red-50 rounded" title="Supprimer">
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                      </button>
                     </div>
                   </div>
-                  
-                  <h4 className="font-medium text-gray-900 mb-2">{review.title}</h4>
-                  <p className="text-gray-700 mb-3">{review.content}</p>
-                  
-                  <div className="flex items-center justify-between pt-3 border-t">
-                    <div className="flex items-center space-x-4">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        review.wouldRecommend 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {review.wouldRecommend ? 'Je recommande' : 'Je ne recommande pas'}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center space-x-4">
-                      <span className="text-sm text-gray-600">Cet avis est-il utile ?</span>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleHelpful(review.id, true)}
-                          className="flex items-center space-x-1 text-gray-600 hover:text-green-600 transition-colors"
-                        >
-                          <ThumbsUp className="w-4 h-4" />
-                          <span className="text-sm">{review.helpful}</span>
-                        </button>
-                        <button
-                          onClick={() => handleHelpful(review.id, false)}
-                          className="flex items-center space-x-1 text-gray-600 hover:text-red-600 transition-colors"
-                        >
-                          <ThumbsDown className="w-4 h-4" />
-                          <span className="text-sm">{review.notHelpful}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  {r.title && <h4 className="font-medium text-neutral-900 mb-1">{r.title}</h4>}
+                  {r.content && <p className="text-sm text-neutral-700 whitespace-pre-line">{r.content}</p>}
                 </div>
               </div>
             </div>
@@ -353,119 +166,57 @@ const Reviews = () => {
         </div>
       )}
 
-      {/* Modal Ajout/Modification d'avis */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingReview ? 'Modifier mon avis' : 'Rédiger un avis'}
-                </h3>
-                <button
-                  onClick={handleCancel}
-                  className="p-2 text-gray-600 hover:text-gray-900"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+      {/* Modal édition */}
+      {editing && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeEdit}>
+          <div className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold">Modifier mon avis</h3>
+              <button onClick={closeEdit} className="p-1 hover:bg-neutral-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+              <div>
+                <p className="text-sm text-neutral-600 mb-1">Produit</p>
+                <p className="font-medium">{editing.product_name}</p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nom du produit
-                  </label>
-                  <input
-                    type="text"
-                    name="productName"
-                    value={formData.productName}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.productName ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Nom du produit"
-                  />
-                  {errors.productName && <p className="mt-1 text-sm text-red-600">{errors.productName}</p>}
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-2">Note</label>
+                {renderStars(formData.rating, true, (rating) => setFormData(p => ({ ...p, rating })))}
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Note
-                  </label>
-                  {renderStars(formData.rating, true, (rating) => 
-                    setFormData(prev => ({ ...prev, rating }))
-                  )}
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">Titre</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData(p => ({ ...p, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Titre de l'avis
-                  </label>
-                  <input
-                    type="text"
-                    name="title"
-                    value={formData.title}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.title ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Résumez votre expérience"
-                  />
-                  {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title}</p>}
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">Avis</label>
+                <textarea
+                  rows={4}
+                  value={formData.content}
+                  onChange={(e) => setFormData(p => ({ ...p, content: e.target.value }))}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <p className="mt-1 text-xs text-neutral-500">{formData.content.length}/20 caractères minimum</p>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Votre avis
-                  </label>
-                  <textarea
-                    name="content"
-                    value={formData.content}
-                    onChange={handleChange}
-                    rows={4}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.content ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Décrivez votre expérience avec ce produit (minimum 20 caractères)"
-                  />
-                  {errors.content && <p className="mt-1 text-sm text-red-600">{errors.content}</p>}
-                  <p className="mt-1 text-sm text-gray-500">
-                    {formData.content.length}/20 caractères minimum
-                  </p>
-                </div>
-
-                <div>
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      name="wouldRecommend"
-                      checked={formData.wouldRecommend}
-                      onChange={handleChange}
-                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="text-sm text-gray-700">
-                      Je recommande ce produit
-                    </span>
-                  </label>
-                </div>
-
-                <div className="flex items-center space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="flex-1 py-2 px-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    {editingReview ? 'Modifier' : 'Publier'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={closeEdit} className="px-4 py-2 border border-neutral-200 rounded-lg text-sm hover:bg-neutral-50">
+                  Annuler
+                </button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 disabled:opacity-50">
+                  {saving ? 'Enregistrement…' : 'Mettre à jour'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

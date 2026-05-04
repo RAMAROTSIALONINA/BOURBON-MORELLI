@@ -16,7 +16,8 @@ const PRODUCTS_DATABASE = [
     reviews_count: 12,
     inventory_quantity: 5,
     stock: 5,
-    reviews: 12
+    reviews: 12,
+    sizes: ['120x180cm', '140x200cm', '160x240cm']
   },
   {
     id: 2,
@@ -32,7 +33,8 @@ const PRODUCTS_DATABASE = [
     reviews_count: 8,
     inventory_quantity: 3,
     stock: 3,
-    reviews: 8
+    reviews: 8,
+    sizes: ['S', 'M', 'L', 'XL']
   },
   {
     id: 3,
@@ -48,7 +50,8 @@ const PRODUCTS_DATABASE = [
     reviews_count: 6,
     inventory_quantity: 15,
     stock: 15,
-    reviews: 6
+    reviews: 6,
+    sizes: ['S', 'M', 'L', 'XL', 'XXL']
   },
   {
     id: 4,
@@ -64,7 +67,8 @@ const PRODUCTS_DATABASE = [
     reviews_count: 10,
     inventory_quantity: 8,
     stock: 8,
-    reviews: 10
+    reviews: 10,
+    sizes: ['30', '32', '34', '36', '38', '40']
   }
 ];
 

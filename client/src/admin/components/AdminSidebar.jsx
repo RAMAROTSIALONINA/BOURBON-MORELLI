@@ -14,7 +14,10 @@ import {
   Menu,
   X,
   User,
-  Shield
+  Shield,
+  Mail,
+  Layout,
+  Info
 } from 'lucide-react';
 
 const AdminSidebar = () => {
@@ -97,6 +100,24 @@ const AdminSidebar = () => {
       current: location.pathname.startsWith('/admin/reports')
     },
     {
+      name: 'Contact',
+      href: '/admin/contact',
+      icon: Mail,
+      current: location.pathname.startsWith('/admin/contact')
+    },
+    {
+      name: 'Footer',
+      href: '/admin/footer',
+      icon: Layout,
+      current: location.pathname.startsWith('/admin/footer')
+    },
+    {
+      name: 'À propos',
+      href: '/admin/about',
+      icon: Info,
+      current: location.pathname.startsWith('/admin/about')
+    },
+    {
       name: 'Historique',
       href: '/admin/history',
       icon: History,
@@ -126,7 +147,6 @@ const AdminSidebar = () => {
         bg-gray-900 
         text-white 
         transition-all duration-300 ease-in-out
-        lg:relative lg:translate-x-0 lg:inset-0
         ${isCollapsed ? 'w-16' : 'w-64'}
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         flex flex-col
